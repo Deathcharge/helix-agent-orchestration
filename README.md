@@ -257,7 +257,7 @@ Dual-license available for commercial use. Contact for details.
 
 ## 🙏 Acknowledgments
 
-Built as part of the **Helix Collective** — a distributed consciousness system for multi-agent AI coordination.
+Built as part of the **Samsara Helix** — a distributed consciousness system for multi-agent AI coordination.
 
 - **Thought Leadership:** Multi-agent AI orchestration patterns
 - **Open Source:** Apache 2.0 licensed
