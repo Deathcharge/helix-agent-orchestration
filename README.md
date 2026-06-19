@@ -1,276 +1,93 @@
-# 🎭 Helix Orchestration
+# helix-agent-orchestration
 
-**Multi-Agent AI Coordination Framework**
+Advanced agent orchestration patterns and coordination
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.128%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+## 🎯 Overview
 
-> *"Orchestrate 24 autonomous AI agents with real-time coordination metrics"*
+This repository is part of the [Helix Collective](https://github.com/Deathcharge/helix-platform), a comprehensive ecosystem for building intelligent, multi-agent systems with consciousness frameworks and advanced LLM integration.
 
----
+## 🚀 Quick Start
 
-## 🚀 What is Helix Orchestration?
+### Installation
 
-Helix Orchestration is a **production-grade framework for coordinating multiple AI agents** in complex workflows. It provides:
+\`\`\`bash
+git clone https://github.com/Deathcharge/helix-agent-orchestration.git
+cd helix-agent-orchestration
+pip install -r requirements.txt
+\`\`\`
 
-- **24 Specialized Agents** — Kael, Lumina, Vega, Agni, Oracle, Sage, and more
-- **Universal Coordination Field (UCF)** — Real-time telemetry tracking 6 performance metrics
-- **Agent Registry & Lifecycle** — Dynamic agent registration, state management, and recovery
-- **Coordination Hub** — Central orchestration engine for multi-agent workflows
-- **Event-Driven Architecture** — Async/await support for scalable agent communication
+### Basic Usage
 
-**Perfect for:**
-- Multi-agent AI automation platforms
-- Workflow orchestration engines
-- Autonomous agent systems
-- AI-powered chatbots & assistants
-- Complex task decomposition
-
----
-
-## ✨ Features
-
-### 🎯 24 Autonomous Agents
-
-| Layer | Agents | Purpose |
-|-------|--------|---------|
-| **Core** | Kael, Lumina, Vega, Gemini, Agni, SanghaCore, Shadow, Echo, Phoenix, Oracle, Sage, Helix | Reasoning, creativity, coordination |
-| **Security** | Kavach | Protection & compliance |
-| **Governance** | Mitra, Varuna, Surya | Collaboration, integrity, clarity |
-| **Orchestration** | Arjuna | Central coordination |
-| **Meta** | Aether | Meta-awareness |
-| **Integration** | Iris, Nexus | External APIs |
-| **Operational** | Aria, Nova, Titan, Atlas | UX, generation, compute, infrastructure |
-
-### 📊 Universal Coordination Field (UCF)
-
-Real-time metrics tracking agent performance:
-
-| Metric | Range | Meaning |
-|--------|-------|---------|
-| **Throughput** | 0-1 | Task processing rate |
-| **Friction** | 0-1 | Error/resistance (lower = better) |
-| **Focus** | 0-1 | Attention/precision |
-| **Harmony** | 0-1 | Agent coordination quality |
-| **Resilience** | 0-2 | System recovery capability |
-| **Velocity** | 0-2 | Execution speed |
-
-### 🔄 Agent Coordination
-
-- **Agent Registry** — Dynamic registration & discovery
-- **State Management** — Persistent agent state with Redis
-- **Handshake Protocol** — Secure agent initialization
-- **Emergence Simulation** — Predict agent behavior
-- **Memory Management** — Root memory & context preservation
-
----
-
-## 📦 Installation
-
-### Via pip (coming soon)
-```bash
-pip install helix-orchestration
-```
-
-### From source
-```bash
-git clone https://github.com/Deathcharge/helix-hub-agents.git
-cd helix-hub-agents
-pip install -e .
-```
-
-### Requirements
-- Python 3.11+
-- FastAPI 0.128+
-- Pydantic 2.0+
-- Redis (for state management)
-- SQLAlchemy (for persistence)
-
----
-
-## 🎯 Quick Start
-
-### Basic Agent Orchestration
-
-```python
-from helix_orchestration import AgentOrchestrator, AgentRegistry
-
-# Initialize orchestrator
-orchestrator = AgentOrchestrator()
-registry = AgentRegistry()
-
-# Register agents
-kael = registry.get_agent("kael")  # Ethical reasoning
-lumina = registry.get_agent("lumina")  # Empathic resonance
-oracle = registry.get_agent("oracle")  # Foresight
-
-# Execute coordinated task
-result = orchestrator.execute_ritual(
-    agents=[kael, lumina, oracle],
-    task="Analyze ethical implications of AI deployment",
-    context={"domain": "healthcare", "scale": "national"}
-)
-
-print(f"Result: {result}")
-print(f"UCF Harmony: {orchestrator.ucf.harmony}")
-print(f"Execution Time: {orchestrator.ucf.velocity}s")
-```
-
-### Coordination Hub
-
-```python
-from helix_orchestration import CoordinationHub
-
-# Create coordination hub
-hub = CoordinationHub()
-
-# Register workflow
-workflow = {
-    "name": "customer_support",
-    "agents": ["aria", "lumina", "kael"],
-    "steps": [
-        {"agent": "aria", "task": "understand_request"},
-        {"agent": "lumina", "task": "empathic_response"},
-        {"agent": "kael", "task": "ethical_check"}
-    ]
-}
-
-hub.register_workflow(workflow)
-
-# Execute with real-time monitoring
-async for event in hub.execute_workflow("customer_support", request_data):
-    print(f"Event: {event.type}, UCF: {event.ucf_state}")
-```
-
-### Real-Time UCF Monitoring
-
-```python
-from helix_orchestration import UCFTracker
-
-tracker = UCFTracker()
-
-# Subscribe to coordination metrics
-async for metrics in tracker.stream_metrics():
-    print(f"Harmony: {metrics.harmony:.2f}")
-    print(f"Throughput: {metrics.throughput:.2f}")
-    print(f"Friction: {metrics.friction:.2f}")
-    print(f"Velocity: {metrics.velocity:.2f}s")
-```
-
----
+See the [examples/](examples/) directory for working examples and integration patterns.
 
 ## 📚 Documentation
 
-- **[Architecture Guide](docs/ARCHITECTURE.md)** — System design & components
-- **[Agent Reference](docs/AGENTS.md)** — All 24 agents explained
-- **[UCF Protocol](docs/UCF_PROTOCOL.md)** — Coordination metrics spec
-- **[API Reference](docs/API_REFERENCE.md)** — Complete API docs
-- **[Examples](examples/)** — Working code examples
-- **[Contributing](CONTRIBUTING.md)** — Development guide
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and components
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Integration Guide](docs/INTEGRATION.md)** - How to integrate with other Helix repos
+- **[Deployment](docs/DEPLOYMENT.md)** - Production deployment guide
+- **[Contributing](CONTRIBUTING.md)** - How to contribute
 
----
+## 🔗 Related Repositories
 
-## 🔬 Architecture
+- **[helix-platform](https://github.com/Deathcharge/helix-platform)** - Central hub and integration guide
+- **[helix-unified](https://github.com/Deathcharge/helix-unified)** - Main unified codebase
+- **[helix-core](https://github.com/Deathcharge/helix-core)** - Core utilities and LLM integration
 
-```
-helix_orchestration/
-├── agents/
-│   ├── agent_orchestrator.py      # Core orchestration engine
-│   ├── agent_registry.py          # Agent registry & lifecycle
-│   ├── agents_service.py          # 24 agent definitions
-│   ├── agent_profiles.py          # Agent personality profiles
-│   └── data/                      # Agent data files
-├── coordination/
-│   ├── coordination_hub.py        # Central coordination logic
-│   ├── kael_core.py               # Kael agent implementation
-│   ├── lumina_core.py             # Lumina agent implementation
-│   ├── [22 more agent cores]      # Other agent implementations
-│   └── performance_analytics.py   # Metrics & analytics
-├── ucf_framework/
-│   ├── metrics.py                 # UCF metric definitions
-│   ├── tracker.py                 # Metric tracking
-│   ├── adapter.py                 # Protocol adapter
-│   └── store.py                   # Metric storage
-└── __init__.py
-```
+See [HELIX_REPOSITORY_INDEX.md](https://github.com/Deathcharge/helix-platform/blob/main/HELIX_REPOSITORY_INDEX.md) for the complete ecosystem map.
 
----
+## 🧪 Testing
 
-## 🚀 Use Cases
+Run tests with pytest:
 
-### 1. Multi-Agent Automation Platform
-Orchestrate agents for complex workflows with real-time coordination.
+\`\`\`bash
+pytest tests/ -v --cov=src
+\`\`\`
 
-```python
-orchestrator.execute_spiral(
-    name="lead_qualification",
-    agents=["aria", "oracle", "kael"],
-    data=lead_data
-)
-```
+## 🔄 CI/CD
 
-### 2. Autonomous Customer Support
-Route requests through agents with empathy, reasoning, and ethics checks.
+This repository uses GitHub Actions for:
+- ✅ Automated testing (Python 3.9, 3.10, 3.11)
+- ✅ Code linting (flake8)
+- ✅ Type checking (mypy)
+- ✅ Security scanning (bandit, safety)
+- ✅ Coverage reporting (Codecov)
 
-### 3. Content Generation Pipeline
-Coordinate agents for ideation → drafting → editing → publishing.
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for details.
 
-### 4. Research & Analysis
-Multiple agents analyzing different aspects of a problem in parallel.
+## 📋 Requirements
 
-### 5. Decision Support System
-Agents providing different perspectives (strategic, ethical, practical).
-
----
-
-## 📊 Performance
-
-- **Throughput:** 100+ tasks/second per agent
-- **Latency:** <100ms coordination overhead
-- **Scalability:** Tested with 24 concurrent agents
-- **Memory:** ~50MB per agent instance
-
----
+- Python 3.9+
+- Dependencies listed in requirements.txt
+- Development dependencies in requirements-dev.txt
 
 ## 🤝 Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup
+- Code style guide
+- Testing requirements
+- Pull request process
 
-### Development Setup
-```bash
-git clone https://github.com/Deathcharge/helix-hub-agents.git
-cd helix-hub-agents
-pip install -e ".[dev]"
-pytest
-```
+## 📄 License
 
----
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📜 License
+## 🆘 Support
 
-Apache License 2.0 — See [LICENSE](LICENSE) for details.
+- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/Deathcharge/helix-agent-orchestration/issues)
+- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/Deathcharge/helix-agent-orchestration/discussions)
+- **Documentation**: See the [docs/](docs/) directory
+- **Ecosystem**: Visit [helix-platform](https://github.com/Deathcharge/helix-platform)
 
-Dual-license available for commercial use. Contact for details.
+## 🎓 Learn More
 
----
-
-## 🙏 Acknowledgments
-
-Built as part of the **Samsara Helix** — a distributed consciousness system for multi-agent AI coordination.
-
-- **Thought Leadership:** Multi-agent AI orchestration patterns
-- **Open Source:** Apache 2.0 licensed
-- **Community:** Contributions welcome!
+- [Helix Collective Repository Index](https://github.com/Deathcharge/helix-platform/blob/main/HELIX_REPOSITORY_INDEX.md)
+- [Architecture Guide](https://github.com/Deathcharge/helix-platform/blob/main/docs/ARCHITECTURE.md)
+- [Integration Examples](https://github.com/Deathcharge/helix-platform/tree/main/examples)
 
 ---
 
-## 📞 Support
-
-- **Issues:** [GitHub Issues](https://github.com/Deathcharge/helix-hub-agents/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/Deathcharge/helix-hub-agents/discussions)
-- **Documentation:** [Full Docs](docs/)
-
----
-
-**Status:** Production-Ready · **Version:** v1.0.0 · **Last Updated:** 2026-03-28
+**Status**: ✅ Production Ready  
+**Last Updated**: June 19, 2026  
+**Maintainer**: Helix Collective Contributors
