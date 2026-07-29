@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import pytest
@@ -62,12 +63,8 @@ async def test_ready_steps_respect_concurrency_limit() -> None:
         active -= 1
         return "done"
 
-    steps = tuple(
-        WorkflowStep(id=f"step-{index}", action="measured") for index in range(6)
-    )
-    result = await WorkflowRunner({"measured": measured}).run(
-        workflow(*steps, max_concurrency=2)
-    )
+    steps = tuple(WorkflowStep(id=f"step-{index}", action="measured") for index in range(6))
+    result = await WorkflowRunner({"measured": measured}).run(workflow(*steps, max_concurrency=2))
 
     assert result.succeeded
     assert peak == 2
@@ -112,6 +109,32 @@ async def test_timeout_fails_and_blocks_downstream() -> None:
         "message": "Step exceeded its 0.001s timeout.",
     }
     assert result.steps[1].state is StepState.BLOCKED
+
+
+@pytest.mark.asyncio
+async def test_timed_out_sync_handler_is_not_retried_concurrently() -> None:
+    calls = 0
+
+    def slow(_context: ActionContext) -> None:
+        nonlocal calls
+        calls += 1
+        time.sleep(0.03)
+
+    result = await WorkflowRunner({"slow": slow}).run(
+        workflow(
+            WorkflowStep(
+                id="slow",
+                action="slow",
+                timeout_seconds=0.001,
+                retries=2,
+            )
+        )
+    )
+
+    await asyncio.sleep(0.04)
+    assert result.status == "failed"
+    assert result.steps[0].attempts == 1
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -201,9 +224,7 @@ async def test_cancellation_propagates_to_caller() -> None:
         await asyncio.Event().wait()
 
     task = asyncio.create_task(
-        WorkflowRunner({"wait": wait_forever}).run(
-            workflow(WorkflowStep(id="wait", action="wait"))
-        )
+        WorkflowRunner({"wait": wait_forever}).run(workflow(WorkflowStep(id="wait", action="wait")))
     )
     await started.wait()
     task.cancel()

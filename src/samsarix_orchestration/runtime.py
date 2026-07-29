@@ -161,8 +161,7 @@ class WorkflowRunner:
                 step_id
                 for step_id in pending
                 if any(
-                    dependency in results
-                    and results[dependency].state is not StepState.SUCCEEDED
+                    dependency in results and results[dependency].state is not StepState.SUCCEEDED
                     for dependency in ordered_steps[step_id].dependencies
                 )
             ]
@@ -181,16 +180,13 @@ class WorkflowRunner:
                 for step in workflow.steps
                 if step.id in pending
                 and all(
-                    dependency in results
-                    and results[dependency].state is StepState.SUCCEEDED
+                    dependency in results and results[dependency].state is StepState.SUCCEEDED
                     for dependency in step.dependencies
                 )
             ]
             if not ready:
                 if pending:
-                    raise WorkflowExecutionError(
-                        "Workflow stalled despite successful validation."
-                    )
+                    raise WorkflowExecutionError("Workflow stalled despite successful validation.")
                 break
 
             tasks = [
@@ -264,7 +260,11 @@ class WorkflowRunner:
             started_clock = time.perf_counter()
             last_error: BaseException | None = None
             attempts = step.retries + 1
+            attempts_used = 0
+            handler = self._actions[step.action]
+            handler_is_async = inspect.iscoroutinefunction(handler)
             for attempt in range(1, attempts + 1):
+                attempts_used = attempt
                 context = ActionContext(
                     workflow_name=workflow_name,
                     step=step,
@@ -274,7 +274,7 @@ class WorkflowRunner:
                 )
                 try:
                     output = await asyncio.wait_for(
-                        self._invoke(self._actions[step.action], context),
+                        self._invoke(handler, context),
                         timeout=step.timeout_seconds,
                     )
                     self._require_json_value(output, label=f"output from step {step.id}")
@@ -286,9 +286,7 @@ class WorkflowRunner:
                         attempts=attempt,
                         started_at=started_at,
                         finished_at=_utc_now(),
-                        duration_ms=round(
-                            (time.perf_counter() - started_clock) * 1_000, 3
-                        ),
+                        duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
                         output=output,
                     )
                 except asyncio.CancelledError:
@@ -297,6 +295,12 @@ class WorkflowRunner:
                     last_error = TimeoutError(
                         f"Step exceeded its {step.timeout_seconds:g}s timeout."
                     )
+                    # asyncio cannot terminate work already running in a worker
+                    # thread. Retrying a timed-out synchronous handler could run
+                    # the same side effect concurrently, so fail this step after
+                    # the first timeout regardless of its retry setting.
+                    if not handler_is_async:
+                        break
                 except Exception as exc:
                     last_error = exc
                 if attempt < attempts and step.retry_delay_seconds:
@@ -309,7 +313,7 @@ class WorkflowRunner:
                 agent=step.agent,
                 action=step.action,
                 state=StepState.FAILED,
-                attempts=attempts,
+                attempts=attempts_used,
                 started_at=started_at,
                 finished_at=_utc_now(),
                 duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
@@ -334,8 +338,7 @@ class WorkflowRunner:
             raise WorkflowExecutionError(f"{label} must be finite JSON data.") from exc
         if len(encoded) > self.max_result_bytes:
             raise WorkflowExecutionError(
-                f"{label} is {len(encoded)} bytes; the limit is "
-                f"{self.max_result_bytes} bytes."
+                f"{label} is {len(encoded)} bytes; the limit is {self.max_result_bytes} bytes."
             )
 
     @staticmethod

@@ -61,8 +61,7 @@ handlers.
 An action is a trusted sync or async callable registered by name:
 
 ```python
-def action(context: ActionContext) -> JSONValue:
-    ...
+def action(context: ActionContext) -> JSONValue: ...
 ```
 
 `context.workflow_input` is the run input. `context.dependencies` maps each declared
@@ -71,7 +70,9 @@ object, and `context.attempt` starts at 1.
 
 Results must be finite JSON and fit within the runner's output bound. An exception or
 timeout consumes an attempt. When all attempts fail, the step is `failed`; dependent
-steps become `blocked`.
+steps become `blocked`. A synchronous-handler timeout ends the step immediately without
+using configured retries because Python cannot stop the worker thread and a retry could
+overlap the same external side effect.
 
 The CLI exposes only `collect`, `echo`, `uppercase`, and `word_count`. Applications
 register real actions through `WorkflowRunner`; workflow files cannot import them.

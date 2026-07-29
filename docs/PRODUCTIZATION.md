@@ -201,7 +201,8 @@ retention design. A partial JSON state dump would be misleading.
 ## Known risks
 
 - Sync Python handlers run in threads. A timeout stops waiting but cannot forcibly stop
-  arbitrary thread code; handlers must apply timeouts to their own blocking I/O.
+  arbitrary thread code; handlers must apply timeouts to their own blocking I/O. The
+  runner does not retry a timed-out sync handler because that could overlap side effects.
 - There is no durable checkpoint. A process crash loses in-memory run state.
 - External side effects are not automatically idempotent.
 - Handler output is measured after it is returned, so a malicious trusted handler can

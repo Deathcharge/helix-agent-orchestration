@@ -53,8 +53,7 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Validate and run bounded, provider-neutral workflows using registered "
-            "Python actions."
+            "Validate and run bounded, provider-neutral workflows using registered Python actions."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -90,9 +89,7 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
     return parser
 
 
-def main(
-    argv: list[str] | None = None, *, prog: str = "samsarix-orchestration"
-) -> int:
+def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration") -> int:
     """Run the CLI and return a stable process exit code."""
     parser = build_parser(prog=prog)
     args = parser.parse_args(argv)
@@ -130,9 +127,7 @@ def main(
         if args.command == "run":
             workflow = load_workflow(args.path)
             workflow_input = _load_input(args.input, args.input_file)
-            result = asyncio.run(
-                WorkflowRunner(builtin_actions()).run(workflow, workflow_input)
-            )
+            result = asyncio.run(WorkflowRunner(builtin_actions()).run(workflow, workflow_input))
             report = result.to_dict()
             rendered = json.dumps(report, indent=2, sort_keys=True)
             if args.output:
@@ -168,9 +163,7 @@ def _load_input(inline: str | None, input_file: Path | None) -> Any:
     if inline is not None:
         encoded = inline.encode("utf-8")
         if len(encoded) > MAX_INPUT_BYTES:
-            raise WorkflowSpecError(
-                f"Inline input exceeds the {MAX_INPUT_BYTES}-byte limit."
-            )
+            raise WorkflowSpecError(f"Inline input exceeds the {MAX_INPUT_BYTES}-byte limit.")
         try:
             return json.loads(inline)
         except json.JSONDecodeError as exc:
@@ -186,9 +179,7 @@ def _load_input(inline: str | None, input_file: Path | None) -> Any:
     if not input_file.is_file():
         raise WorkflowSpecError(f"Input path is not a regular file: {input_file}")
     if size > MAX_INPUT_BYTES:
-        raise WorkflowSpecError(
-            f"Input is {size} bytes; the limit is {MAX_INPUT_BYTES} bytes."
-        )
+        raise WorkflowSpecError(f"Input is {size} bytes; the limit is {MAX_INPUT_BYTES} bytes.")
     try:
         return json.loads(input_file.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:

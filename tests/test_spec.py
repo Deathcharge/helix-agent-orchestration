@@ -132,9 +132,7 @@ def test_validation_rejects_wrong_root_and_step_shapes() -> None:
 
 def test_step_limit_is_bounded() -> None:
     data = valid_data()
-    data["steps"] = [
-        {"id": f"s{index}", "action": "echo"} for index in range(MAX_STEPS + 1)
-    ]
+    data["steps"] = [{"id": f"s{index}", "action": "echo"} for index in range(MAX_STEPS + 1)]
     assert any(issue.code == "steps_limit" for issue in validate_workflow_data(data))
 
 

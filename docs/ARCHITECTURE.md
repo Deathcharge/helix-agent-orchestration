@@ -63,8 +63,10 @@ the host application's explicit action registry and configuration.
   runner.
 - Sync actions run in worker threads so they do not directly block the event loop.
 - Async actions receive cancellation; Python cannot forcibly stop a sync worker thread,
-  so sync handlers must cooperate with their own external timeouts.
-- A run report is returned only after all started work reaches a terminal state.
+  so sync handlers must cooperate with their own external timeouts. After a sync timeout,
+  the runner skips configured retries to avoid overlapping the same side effect.
+- Async work reaches a terminal state before the run report is returned. A timed-out sync
+  worker may still be exiting in the background, so handlers must bound their own I/O.
 - There is no checkpoint/resume. A process crash requires a new run, and handlers with
   external side effects must provide their own idempotency.
 - Timestamps and durations are observations, not a durable audit log.

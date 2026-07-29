@@ -140,9 +140,7 @@ def load_workflow(path: str | Path, *, max_bytes: int = MAX_WORKFLOW_BYTES) -> W
     if not source.is_file():
         raise WorkflowSpecError(f"Workflow path is not a regular file: {source}")
     if size > max_bytes:
-        raise WorkflowSpecError(
-            f"Workflow is {size} bytes; the limit is {max_bytes} bytes."
-        )
+        raise WorkflowSpecError(f"Workflow is {size} bytes; the limit is {max_bytes} bytes.")
     try:
         raw = source.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
