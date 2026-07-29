@@ -1,24 +1,22 @@
 # Copyright (c) 2026 Samsarix LLC
 # SPDX-License-Identifier: MPL-2.0
 
-"""Compatibility namespace for the former Helix Orchestration package name.
+"""Public API for Samsarix Orchestration."""
 
-New applications should import :mod:`samsarix_orchestration`.
-"""
-
-from samsarix_orchestration import (
-    MAX_WORKFLOW_BYTES,
+from .runtime import (
     ActionContext,
     StepResult,
     StepState,
-    ValidationIssue,
-    WorkflowDefinition,
     WorkflowExecutionError,
     WorkflowRunner,
     WorkflowRunResult,
+)
+from .spec import (
+    MAX_WORKFLOW_BYTES,
+    ValidationIssue,
+    WorkflowDefinition,
     WorkflowSpecError,
     WorkflowStep,
-    __version__,
     load_workflow,
 )
 
@@ -34,6 +32,7 @@ __all__ = [
     "WorkflowRunner",
     "WorkflowSpecError",
     "WorkflowStep",
-    "__version__",
     "load_workflow",
 ]
+
+__version__ = "0.1.0"

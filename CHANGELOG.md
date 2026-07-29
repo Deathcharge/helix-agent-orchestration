@@ -1,60 +1,39 @@
 # Changelog
 
-All notable changes to helix-agent-orchestration are documented in this file.
+All notable changes to the supported Samsarix Orchestration package are recorded here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## 0.1.0 - 2026-07-28
 
----
-
-## [1.0.1] - 2026-04-02
+Initial honest standalone release candidate.
 
 ### Added
 
-#### Testing Infrastructure
-- **Comprehensive Test Suite**: 32+ unit and integration tests
-  - `tests/conftest.py`: Pytest configuration with fixtures and mocks (300+ lines)
-  - `tests/test_agent_orchestrator.py`: Core orchestrator tests (400+ lines)
-  - `tests/test_integration_agent_cores.py`: Integration tests with real agent cores (600+ lines)
-- **Test Configuration**: `pytest.ini` with coverage reporting
-- **Test Dependencies**: `requirements-test.txt` with all testing tools
+- Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
+  compatibility aliases for the historical Helix names.
+- MPL-2.0 licensing, ownership notice, trademark guidance, and rename migration guide.
+- Versioned JSON workflow definitions and complete graph validation.
+- Bounded async DAG runner for registered sync or async Python actions.
+- Concurrency, timeout, retry, fail-fast, cancellation, and JSON output controls.
+- Provider-free `init`, `validate`, `run`, and `actions` CLI commands.
+- Structured terminal run reports and explicit atomic output replacement.
+- Source-backed tests, strict typing, linting, CI, and installed-wheel verification.
+- Accurate workflow format, architecture, security, and productization documentation.
 
-#### Documentation
-- **API Reference**: Complete API documentation with examples (500+ lines)
-- **Performance Guide**: Comprehensive performance documentation (400+ lines)
-- **Troubleshooting Guide**: Common issues and solutions (400+ lines)
-- **Updated README**: Community-focused documentation
+### Changed
 
-#### Code Examples
-- **Basic Orchestration Example**: `examples/basic_orchestration.py` (300+ lines)
+- Reset the package maturity from an unsupported “production stable” 1.0 claim to an
+  explicit 0.1 alpha release candidate.
+- Reduced the supported distribution to the typed `samsarix_orchestration` runtime
+  plus small compatibility aliases, with no runtime dependencies or private services.
+- Removed the unsupported historical research forest from the active tree; revision
+  `6e10c5b` preserves it in Git history.
 
-#### Error Handling
-- **Custom Exception Hierarchy**: `src/helix_orchestration/exceptions.py` (600+ lines)
-  - 30+ custom exception classes with recovery strategies
+### Removed from the supported product
 
-#### Performance Tools
-- **Performance Benchmarking Suite**: `benchmarks/performance_benchmarks.py` (400+ lines)
+- Fabricated agent, health, uptime, metric, and workflow CLI output.
+- Nonexistent API/server deployment configuration and documentation.
+- Conflicting requirements files, legacy setup metadata, stale examples, and mock-only
+  core tests.
 
-### Statistics
-- **Total Lines Added**: 2,500+
-- **New Files**: 7
-- **Test Coverage**: 80%+
-- **Breaking Changes**: 0
-
----
-
-## [1.0.0] - 2026-03-31
-
-### Added
-- Initial release of Helix Agent Orchestration
-- Multi-agent coordination framework
-- Integration examples with all Helix components
-- Comprehensive documentation
-- Apache 2.0 + Proprietary licensing
-
-### Features
-- Agent orchestration engine
-- Workflow coordination
-- Real-time monitoring
-- Performance analytics
-- Integration patterns
+Historical agent and coordination sources remain available in Git revision `6e10c5b`;
+they are not present in the active tree or the 0.1 wheel.

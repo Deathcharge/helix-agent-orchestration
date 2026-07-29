@@ -1,93 +1,179 @@
-# helix-agent-orchestration
+# Samsarix Orchestration
 
-Advanced agent orchestration patterns and coordination
+Samsarix Orchestration is a local-first Python library and CLI for defining, validating,
+and running small dependency-aware workflows. Application code registers ordinary
+sync or async Python callables as actions; Samsarix supplies graph validation, bounded
+concurrency, per-step timeouts and retries, failure propagation, and a JSON run report.
 
-## 🎯 Overview
+It is for Python developers who want a transparent provider-neutral orchestration
+primitive before adopting a distributed or hosted workflow system. It does not include
+an LLM provider, execute model-generated code, expose a server, or require private
+infrastructure.
 
-This repository is part of the [Helix Collective](https://github.com/Deathcharge/helix-platform), a comprehensive ecosystem for building intelligent, multi-agent systems with consciousness frameworks and advanced LLM integration.
+Status: **0.1 alpha / local release candidate.** The implemented CLI and Python journey
+are tested. The distribution has not yet been published to a package index.
 
-## 🚀 Quick Start
+## What works
 
-### Installation
+- Versioned JSON workflow definitions with actionable validation errors.
+- Directed acyclic dependency graphs with up to 256 steps.
+- Explicit sync or async Python action registration.
+- Concurrent execution bounded to 1–64 in-flight actions per workflow.
+- Per-step timeouts, 0–10 retries, bounded retry delays, and fail-fast behavior.
+- JSON-safe inputs, outputs, errors, and terminal step states.
+- A provider-free CLI example using four deterministic built-in actions.
+- No runtime dependencies, network calls, telemetry, credentials, or hidden persistence.
 
-\`\`\`bash
-git clone https://github.com/Deathcharge/helix-agent-orchestration.git
-cd helix-agent-orchestration
-pip install -r requirements.txt
-\`\`\`
+Durable checkpoints, process isolation, distributed workers, human approval pauses,
+provider adapters, and a remote API are deliberately out of scope for 0.1.
 
-### Basic Usage
+## Fastest successful path
 
-See the [examples/](examples/) directory for working examples and integration patterns.
+Prerequisites: Git and Python 3.11 or newer.
 
-## 📚 Documentation
+```bash
+git clone https://github.com/Deathcharge/samsarix-agent-orchestration.git
+cd samsarix-agent-orchestration
+python -m venv .venv
+python -m pip install .
+samsarix-orchestration init workflow.json
+samsarix-orchestration validate workflow.json
+samsarix-orchestration run workflow.json --output run.json
+```
 
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and components
-- **[API Reference](docs/API.md)** - Complete API documentation
-- **[Integration Guide](docs/INTEGRATION.md)** - How to integrate with other Helix repos
-- **[Deployment](docs/DEPLOYMENT.md)** - Production deployment guide
-- **[Contributing](CONTRIBUTING.md)** - How to contribute
+The final command exits with `0` and prints a JSON report whose workflow status is
+`succeeded`. It also writes the same report to `run.json`. Existing workflow and
+report files are never replaced unless `--force` or `--force-output` is explicit.
 
-## 🔗 Related Repositories
+You can use `python -m samsarix_orchestration` instead of the installed command.
 
-- **[helix-platform](https://github.com/Deathcharge/helix-platform)** - Central hub and integration guide
-- **[helix-unified](https://github.com/Deathcharge/helix-unified)** - Main unified codebase
-- **[helix-core](https://github.com/Deathcharge/helix-core)** - Core utilities and LLM integration
+## CLI
 
-See [HELIX_REPOSITORY_INDEX.md](https://github.com/Deathcharge/helix-platform/blob/main/HELIX_REPOSITORY_INDEX.md) for the complete ecosystem map.
+```text
+samsarix-orchestration --version
+samsarix-orchestration actions
+samsarix-orchestration init PATH [--force]
+samsarix-orchestration validate PATH [--json]
+samsarix-orchestration run PATH [--input JSON | --input-file PATH]
+                                 [--output PATH] [--force-output]
+```
 
-## 🧪 Testing
+Exit codes are stable:
 
-Run tests with pytest:
+- `0`: validation or execution succeeded;
+- `1`: workflow execution failed;
+- `2`: usage, workflow, input, or output validation failed;
+- `130`: the user interrupted execution.
 
-\`\`\`bash
-pytest tests/ -v --cov=src
-\`\`\`
+Workflow and input files are limited to 1 MiB. Each step result is also limited to
+1 MiB by default. See [the workflow format](docs/WORKFLOW_FORMAT.md) for the complete
+schema and [the architecture](docs/ARCHITECTURE.md) for execution semantics.
 
-## 🔄 CI/CD
+## Python API
 
-This repository uses GitHub Actions for:
-- ✅ Automated testing (Python 3.9, 3.10, 3.11)
-- ✅ Code linting (flake8)
-- ✅ Type checking (mypy)
-- ✅ Security scanning (bandit, safety)
-- ✅ Coverage reporting (Codecov)
+```python
+import asyncio
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for details.
+from samsarix_orchestration import ActionContext, WorkflowDefinition, WorkflowRunner
 
-## 📋 Requirements
 
-- Python 3.9+
-- Dependencies listed in requirements.txt
-- Development dependencies in requirements-dev.txt
+async def fetch(_context: ActionContext) -> dict[str, list[int]]:
+    return {"values": [2, 3, 5]}
 
-## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Code style guide
-- Testing requirements
-- Pull request process
+def total(context: ActionContext) -> int:
+    return sum(context.dependencies["fetch"]["values"])
 
-## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+async def main() -> None:
+    definition = WorkflowDefinition.from_dict(
+        {
+            "version": 1,
+            "name": "sum-values",
+            "steps": [
+                {"id": "fetch", "agent": "source", "action": "fetch"},
+                {
+                    "id": "total",
+                    "agent": "calculator",
+                    "action": "total",
+                    "dependencies": ["fetch"],
+                },
+            ],
+        }
+    )
+    result = await WorkflowRunner({"fetch": fetch, "total": total}).run(definition)
+    print(result.to_dict())
 
-## 🆘 Support
 
-- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/Deathcharge/helix-agent-orchestration/issues)
-- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/Deathcharge/helix-agent-orchestration/discussions)
-- **Documentation**: See the [docs/](docs/) directory
-- **Ecosystem**: Visit [helix-platform](https://github.com/Deathcharge/helix-platform)
+asyncio.run(main())
+```
 
-## 🎓 Learn More
+The same runnable example is in [examples/python_workflow.py](examples/python_workflow.py).
+An action receives an `ActionContext` containing the workflow input, its validated step
+definition, dependency outputs, workflow name, and current attempt number. Handlers run
+with the privileges of the Python process; only register trusted code.
 
-- [Helix Collective Repository Index](https://github.com/Deathcharge/helix-platform/blob/main/HELIX_REPOSITORY_INDEX.md)
-- [Architecture Guide](https://github.com/Deathcharge/helix-platform/blob/main/docs/ARCHITECTURE.md)
-- [Integration Examples](https://github.com/Deathcharge/helix-platform/tree/main/examples)
+## Development
 
----
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy
+python -m pytest
+python -m bandit -q -r src
+python -m build
+python -m twine check dist/*
+```
 
-**Status**: ✅ Production Ready  
-**Last Updated**: June 19, 2026  
-**Maintainer**: Helix Collective Contributors
+The test command enforces at least 85% branch-aware coverage. CI runs linting, strict
+typing, tests, package builds, and an installed-wheel smoke test on Python 3.11–3.13.
+Python libraries do not normally lock their consumers' dependency graph; this package
+has no runtime dependencies, while bounded development ranges live in `pyproject.toml`.
+
+## Distribution
+
+The supported artifact is the `samsarix_orchestration` package built from the
+`src` layout and the `samsarix-orchestration` console script:
+
+```bash
+python -m build
+python -m pip install --force-reinstall --no-deps dist/samsarix_orchestration-0.1.0-py3-none-any.whl
+samsarix-orchestration --version
+```
+
+The `helix_orchestration` import, `python -m helix_orchestration`, and
+`helix-orchestration` command are compatibility aliases during the `0.1.x` series.
+They delegate to the Samsarix implementation and do not maintain a second runtime. See
+[the migration guide](docs/MIGRATION.md). Unsupported historical research modules were
+removed from the active tree and remain recoverable from Git revision `6e10c5b`.
+
+## Security, privacy, and cost
+
+The supported runtime performs no network requests, reads no environment variables,
+loads no dynamic modules from workflow data, and executes no workflow strings as code.
+Workflow JSON selects only action names that the host application explicitly registered.
+Concurrency, step count, timeouts, retries, input size, and output size are bounded.
+Cancellation propagates to running async actions.
+
+Action handlers are trusted application code and have the full privileges of the Python
+process. Samsarix Orchestration is not a sandbox. A handler that calls a model or external
+API owns its authentication, destination validation, timeout, cancellation, privacy,
+and cost controls. The built-in CLI path has no API or operating cost beyond local
+compute and disk space for an explicitly requested report.
+
+No telemetry is collected. Run inputs and outputs stay in memory unless `--output` is
+provided; the caller controls report retention and file permissions.
+
+## Project and license status
+
+Copyright 2026 Samsarix LLC and contributors. Source code is licensed under the
+[Mozilla Public License 2.0](LICENSE). MPL-2.0 permits commercial use and combination
+with proprietary applications while requiring distributed modifications to covered
+source files to remain available under MPL-2.0.
+
+See [LICENSING.md](LICENSING.md) for the model and historical-license note,
+[TRADEMARKS.md](TRADEMARKS.md) for brand use, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
+
+- General and licensing questions: contact@samsarix.com
+- Product support and private security reports: support@samsarix.com
