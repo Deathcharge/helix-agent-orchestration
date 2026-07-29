@@ -1,142 +1,120 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77,<84", "wheel>=0.45,<1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-orchestration"
-version = "1.0.0"
-description = "Multi-Agent AI Coordination Framework - Orchestrate 24 autonomous agents with real-time coordination metrics"
+version = "0.1.0"
+description = "Local-first, provider-neutral workflow orchestration for Python callables"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
-authors = [{name = "Samsara Helix"}]
-    {name = "Andrew John Ward", email = "andrew@helixcollective.ai"}
+license-files = ["LICENSE", "LICENSE.PROPRIETARY", "LICENSING.md"]
+authors = [
+    {name = "Samsara Helix"},
+    {name = "Andrew John Ward", email = "andrew@helixcollective.ai"},
 ]
-keywords = [
-    "multi-agent",
-    "ai",
-    "orchestration",
-    "coordination",
-    "agents",
-    "automation",
-    "workflow"
-]
+keywords = ["agents", "asyncio", "orchestration", "workflow"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-
-dependencies = [
-    "fastapi>=0.128.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "sqlalchemy>=2.0.0",
-    "redis>=5.0.0",
-    "aioredis>=2.0.0",
-    "httpx>=0.24.0",
-    "python-dotenv>=1.0.0",
-    "structlog>=23.0.0",
-    "tenacity>=8.0.0",
-    "click>=8.0.0",
-    "rich>=13.0.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.5.0",
-    "pre-commit>=3.0.0",
-]
-
-docs = [
-    "sphinx>=7.0.0",
-    "sphinx-rtd-theme>=1.3.0",
-    "sphinx-autodoc-typehints>=1.24.0",
+    "bandit>=1.8,<2",
+    "build>=1.3,<2",
+    "mypy>=1.17,<2",
+    "pytest>=8.4,<9",
+    "pytest-asyncio>=1.1,<2",
+    "pytest-cov>=6.2,<8",
+    "ruff>=0.12,<1",
 ]
 
 [project.scripts]
-helix-orchestration = "helix_agent_orchestration.cli:main"
+helix-orchestration = "helix_orchestration.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Deathcharge/helix-hub-agents"
-Documentation = "https://github.com/Deathcharge/helix-hub-agents/tree/main/docs"
-Repository = "https://github.com/Deathcharge/helix-hub-agents.git"
-Issues = "https://github.com/Deathcharge/helix-hub-agents/issues"
+Homepage = "https://github.com/Deathcharge/helix-agent-orchestration"
+Repository = "https://github.com/Deathcharge/helix-agent-orchestration.git"
+Issues = "https://github.com/Deathcharge/helix-agent-orchestration/issues"
+Changelog = "https://github.com/Deathcharge/helix-agent-orchestration/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["helix_orchestration"]
 package-dir = {"" = "src"}
 
-[tool.setuptools.package-data]
-helix_orchestration = ["agents/data/*.json", "agents/data/*.yaml"]
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "C",    # flake8-comprehensions
-    "B",    # flake8-bugbear
+extend-exclude = [
+    "benchmarks",
+    "examples/advanced_configuration.py",
+    "examples/advanced_patterns.py",
+    "examples/basic_orchestration.py",
+    "examples/helix_integration.py",
+    "helix_agent_orchestration",
+    "src/helix_orchestration/agents",
+    "src/helix_orchestration/communication",
+    "src/helix_orchestration/config",
+    "src/helix_orchestration/coordination",
+    "src/helix_orchestration/debugging",
+    "src/helix_orchestration/monitoring",
+    "src/helix_orchestration/optimization",
+    "src/helix_orchestration/plugins",
+    "src/helix_orchestration/resilience",
+    "src/helix_orchestration/ucf_framework",
+    "src/helix_orchestration/workflows",
 ]
-ignore = [
-    "E501",  # line too long (handled by black)
-    "W191",  # indentation contains tabs
-]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+files = ["src/helix_orchestration/*.py"]
+strict = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=src/helix_orchestration --cov-report=html --cov-report=term-missing"
+addopts = [
+    "--strict-markers",
+    "--cov=helix_orchestration",
+    "--cov-branch",
+    "--cov-report=term-missing",
+]
+markers = [
+    "integration: exercises an end-to-end product journey",
+]
 
 [tool.coverage.run]
-source = ["src/helix_orchestration"]
-omit = ["*/tests/*", "*/__init__.py"]
+source = ["helix_orchestration"]
+omit = [
+    "src/helix_orchestration/__main__.py",
+    "src/helix_orchestration/agents/*",
+    "src/helix_orchestration/communication/*",
+    "src/helix_orchestration/config/*",
+    "src/helix_orchestration/coordination/*",
+    "src/helix_orchestration/debugging/*",
+    "src/helix_orchestration/monitoring/*",
+    "src/helix_orchestration/optimization/*",
+    "src/helix_orchestration/plugins/*",
+    "src/helix_orchestration/resilience/*",
+    "src/helix_orchestration/ucf_framework/*",
+    "src/helix_orchestration/workflows/*",
+]
 
 [tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
+fail_under = 85
+show_missing = true
+exclude_also = [
     "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
 ]
