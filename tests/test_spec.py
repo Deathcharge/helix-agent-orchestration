@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Samsarix LLC
+# SPDX-License-Identifier: MPL-2.0
+
 from __future__ import annotations
 
 import json
@@ -5,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from helix_orchestration import (
+from samsarix_orchestration import (
     WorkflowDefinition,
     WorkflowSpecError,
     WorkflowStep,
     load_workflow,
 )
-from helix_orchestration.spec import MAX_STEPS, validate_workflow_data
+from samsarix_orchestration.spec import MAX_STEPS, validate_workflow_data
 
 
 def valid_data() -> dict[str, object]:

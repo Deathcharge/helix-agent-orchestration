@@ -1,5 +1,8 @@
-"""Allow `python -m helix_orchestration` after installation."""
+# Copyright (c) 2026 Samsarix LLC
+# SPDX-License-Identifier: MPL-2.0
 
-from .cli import main
+"""Allow the historical `python -m helix_orchestration` entry point."""
 
-raise SystemExit(main())
+from samsarix_orchestration.cli import legacy_main
+
+raise SystemExit(legacy_main())

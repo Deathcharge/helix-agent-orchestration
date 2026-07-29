@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Samsarix LLC
+# SPDX-License-Identifier: MPL-2.0
+
 from __future__ import annotations
 
 import asyncio
@@ -5,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from helix_orchestration import (
+from samsarix_orchestration import (
     ActionContext,
     StepState,
     WorkflowDefinition,

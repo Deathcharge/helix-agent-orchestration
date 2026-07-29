@@ -2,12 +2,12 @@
 
 ## Product boundary
 
-Helix Orchestration 0.1 is an in-process Python workflow library plus a local CLI.
+Samsarix Orchestration 0.1 is an in-process Python workflow library plus a local CLI.
 It is not a model framework, hosted control plane, durable queue, or security sandbox.
-The supported distribution contains one import package:
+The supported implementation is exposed through one primary import package:
 
 ```text
-helix_orchestration
+samsarix_orchestration
 ├── spec.py       JSON schema validation and graph checks
 ├── runtime.py    bounded dependency-aware execution
 ├── actions.py    deterministic CLI demonstration actions
@@ -15,8 +15,10 @@ helix_orchestration
 └── __main__.py   python -m entry point
 ```
 
-Only these root modules are included in the wheel. Historical subpackages in the source
-tree are deliberately outside the package manifest and release quality gate.
+Only these root modules and a small `helix_orchestration` compatibility namespace are
+included in the wheel. The compatibility modules re-export the supported implementation
+and will remain throughout the 0.1 release line. Historical, unsupported subpackages were
+removed from the working tree and remain available in Git history.
 
 ## Execution model
 
@@ -77,6 +79,6 @@ private services.
 
 Current low-level orchestration tools emphasize durable execution, persistence,
 streaming, and human approval, while general workflow tools expose explicit task states,
-timeouts, and retries. Helix 0.1 implements only the transparent local subset it can
-support honestly. Durable state and distributed execution remain explicit non-goals
-rather than simulated features.
+timeouts, and retries. Samsarix Orchestration 0.1 implements only the transparent local
+subset it can support honestly. Durable state and distributed execution remain explicit
+non-goals rather than simulated features.

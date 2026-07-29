@@ -27,7 +27,9 @@ jobs:
           cache: pip
 
       - name: Install development tools
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
       - name: Lint
         run: python -m ruff check .
@@ -39,13 +41,19 @@ jobs:
         run: python -m pytest
 
       - name: Security lint shipped modules
-        run: python -m bandit -q src/helix_orchestration/__init__.py src/helix_orchestration/actions.py src/helix_orchestration/cli.py src/helix_orchestration/runtime.py src/helix_orchestration/spec.py
+        run: python -m bandit -q -r src
 
       - name: Build distributions
-        run: python -m build
+        run: |
+          python -m build
+          python -m twine check dist/*
 
       - name: Verify wheel boundary
-        run: python -c "import pathlib,zipfile; p=next(pathlib.Path('dist').glob('*.whl')); n=zipfile.ZipFile(p).namelist(); assert 'helix_orchestration/runtime.py' in n; assert not any('/agents/' in x or '/coordination/' in x for x in n)"
+        run: python -c "import pathlib,zipfile; p=next(pathlib.Path('dist').glob('*.whl')); n=zipfile.ZipFile(p).namelist(); assert 'samsarix_orchestration/runtime.py' in n; assert 'helix_orchestration/runtime.py' in n; assert not any('/agents/' in x or '/coordination/' in x or '/plugins/' in x for x in n)"
 
       - name: Install and smoke-test wheel
-        run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import importlib.metadata as m, helix_orchestration as h; assert h.__version__ == m.version('helix-orchestration') == '0.1.0'" && helix-orchestration --version
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          python -c "import importlib.metadata as m, samsarix_orchestration as s, helix_orchestration as h; assert s.__version__ == h.__version__ == m.version('samsarix-orchestration') == '0.1.0'"
+          samsarix-orchestration --version
+          helix-orchestration --version

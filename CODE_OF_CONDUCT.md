@@ -1,8 +1,8 @@
-# Helix Collective Code of Conduct
+# Samsarix community Code of Conduct
 
 ## Our Commitment
 
-The Helix Collective is committed to providing a welcoming, inclusive, and respectful environment for all community members, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+Samsarix LLC is committed to providing a welcoming, inclusive, and respectful environment for all community members, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 We are dedicated to creating a community where everyone feels safe, valued, and empowered to contribute their best work.
 
@@ -38,7 +38,7 @@ The following behaviors are unacceptable in our community:
 
 This Code of Conduct applies to:
 
-- All Helix Collective repositories and projects
+- All Samsarix repositories and projects
 - GitHub issues, pull requests, and discussions
 - Community forums and chat channels
 - Conferences, meetups, and events
@@ -53,7 +53,7 @@ This Code of Conduct also applies to conduct outside these spaces if it affects 
 
 If you witness or experience a violation of this Code of Conduct:
 
-1. **Report Privately**: Email conduct@helixcollective.dev with:
+1. **Report Privately**: Email support@samsarix.com with:
    - Description of the incident
    - Names/usernames involved
    - Date and location/context
@@ -86,7 +86,7 @@ The severity of consequences will be proportional to the severity of the violati
 
 If you believe you have been unfairly treated:
 
-1. Submit a written appeal to conduct@helixcollective.dev
+1. Submit a written appeal to support@samsarix.com
 2. Clearly explain why you believe the decision was unfair
 3. Provide any additional context or evidence
 4. A separate review committee will evaluate your appeal
@@ -164,7 +164,7 @@ This Code of Conduct is adapted from:
 
 If you have questions about this Code of Conduct:
 
-- Email: conduct@helixcollective.dev
+- Email: support@samsarix.com
 - Open a Discussion on GitHub
 - Contact a maintainer directly
 
@@ -181,4 +181,4 @@ We recognize that creating an inclusive community is an ongoing process. We are 
 
 **Last Updated**: March 31, 2026
 
-By participating in the Helix Collective community, you agree to abide by this Code of Conduct.
+By participating in the Samsarix community, you agree to abide by this Code of Conduct.

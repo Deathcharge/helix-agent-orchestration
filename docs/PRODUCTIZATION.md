@@ -35,8 +35,8 @@ What was incomplete or misleading:
   entry points;
 - runtime dependency lists disagreed and pulled in databases, web servers, and networking
   that the supported journey did not need;
-- `LICENSE` is BSL 1.1 and names “Helix Licensing System,” while `LICENSING.md`
-  describes an Apache/proprietary model.
+- `LICENSE` was BSL 1.1 and named “Helix Licensing System,” while `LICENSING.md`
+  described an Apache/proprietary model.
 
 ## Baseline command results
 
@@ -58,7 +58,7 @@ All commands below were run on Python 3.11.9 before implementation.
 
 ## Chosen product
 
-**Helix Orchestration Workbench** is a local-first, provider-neutral Python library and
+**Samsarix Orchestration** is a local-first, provider-neutral Python library and
 CLI for defining, validating, and running small dependency-aware workflows using
 explicitly registered Python callables.
 
@@ -73,9 +73,9 @@ explicitly registered Python callables.
 - Independent reason to exist: a zero-runtime-dependency workflow primitive and format
   that does not require `helix-unified`, a model account, a database, or cloud services.
 - Distribution: source distribution, universal Python wheel, and console script.
-- Sustainability: keep the core free of hosted operating costs; paid integration,
-  support, or dual-license offerings are plausible only after the owner resolves the
-  license documents and validates demand.
+- Sustainability: keep the core free of hosted operating costs; paid integration and
+  support remain possible without limiting community use under MPL-2.0. Any future
+  dual-license model needs contributor-rights planning before accepting outside work.
 
 The 0.1 release deliberately excludes built-in LLM/provider adapters, dynamic plugin
 loading, arbitrary command/code execution, authentication, a web UI/API, cloud
@@ -95,16 +95,16 @@ deployment, durable checkpoints, distributed workers, subscriptions, and telemet
    agent, health, consensus, cost, or uptime data.
 6. Use only the standard library at runtime. Python library consumers own their lock;
    bounded development ranges live in one `pyproject.toml`.
-7. Keep the BSL file unchanged and point package metadata to it. Legal interpretation
-   remains an owner decision.
+7. License the supported project under MPL-2.0, retain copyright and trademark notices,
+   and keep the Samsarix brand policy separate from source-code permissions.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
 - LangGraph documents durable execution, persistence, streaming, and human-in-the-loop
-  as runtime concerns; Helix 0.1 explicitly does not claim them:
+  as runtime concerns; Samsarix Orchestration 0.1 explicitly does not claim them:
   https://docs.langchain.com/oss/python/langgraph/overview
 - Prefect treats task state, retries, timeouts, and concurrency as core workflow
-  behavior; Helix implements a bounded local subset:
+  behavior; Samsarix Orchestration implements a bounded local subset:
   https://docs.prefect.io/v3/concepts/tasks
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
@@ -127,12 +127,12 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Make file replacement explicit and forced writes atomic.
 - [x] Add CI across supported Python versions with an installed-wheel smoke test.
 - [x] Rewrite user, architecture, format, security, and contribution documentation.
-- [ ] Owner: reconcile `LICENSE`, its Licensed Work name, and `LICENSING.md`.
+- [x] Adopt MPL-2.0 and reconcile `LICENSE`, package metadata, and legal notices.
 - [ ] Validate Python 3.12 and 3.13 in CI; only 3.11 is available locally.
 
 ### P2
 
-- Consolidate, repair, extract, or remove the excluded historical source subpackages.
+- [x] Remove excluded historical source subpackages while preserving them in Git history.
 - Add an opt-in durable checkpoint interface after idempotency semantics are designed.
 - Add structured progress callbacks and explicit per-step cancellation reporting.
 - Decide whether the package name is available and intended for PyPI.
@@ -155,12 +155,13 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 ## Release acceptance criteria
 
 - A clean Python 3.11 environment can build and install the wheel.
-- `helix-orchestration --version`, `init`, `validate`, and `run` reproduce the
+- `samsarix-orchestration --version`, `init`, `validate`, and `run` reproduce the
   documented journey.
 - Invalid documents, unknown actions, failed handlers, timeouts, retries, blocked
   dependants, existing output files, and cancellation have tested behavior.
 - Ruff, strict MyPy, and the complete test suite pass.
-- The wheel contains only the supported package boundary and no legacy subpackages.
+- The wheel contains the supported package and thin compatibility namespace, with no
+  historical subpackages.
 - CI protects Python 3.11–3.13 and installs the built wheel.
 - No locally actionable P0 remains.
 - Documentation distinguishes implemented behavior, deliberate exclusions, legacy code,
@@ -168,22 +169,24 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 
 ## Completed work
 
-- Rebuilt the packaging and console-script boundary around `helix_orchestration`.
+- Rebuilt the packaging and console-script boundary around `samsarix_orchestration`.
 - Added `spec.py`, `runtime.py`, `actions.py`, `cli.py`, and `__main__.py`.
+- Added temporary `helix_orchestration` import and CLI compatibility for the 0.1 line.
 - Replaced the stale examples and mock-centric tests with the supported vertical slice.
 - Removed duplicate manifests, fake CLI code, nonexistent deployment configuration, and
   stale documentation.
 - Added safe defaults, explicit overwrite controls, bounded errors, and a zero-network
   runtime.
 - Added release CI, package smoke checks, and accurate user/developer documentation.
+- Adopted MPL-2.0 under Samsarix LLC ownership and added notice, migration, and trademark
+  documentation.
 
 ## Deferred work and rationale
 
-The historical agent/coordination source remains in the repository but is excluded from
-the wheel. Repairing or deleting roughly 80 large extraction files would create a broad
-rewrite without strengthening the 0.1 journey. Their incomplete imports, syntax errors,
-simulations, local path assumptions, dynamic execution helpers, and unvalidated
-integrations are recorded as portfolio cleanup, not supported features.
+The historical agent/coordination extraction was removed from the working tree after the
+supported product boundary was established. It remains recoverable from commit
+`6e10c5bd515e61245b289c18c321e0b24664403b`; none of it was advertised or shipped as a
+supported Samsarix feature.
 
 Durable execution is also deferred. Correct persistence requires checkpoint identity,
 atomic commit semantics, output compatibility, resume rules, idempotency, migration, and
@@ -191,12 +194,9 @@ retention design. A partial JSON state dump would be misleading.
 
 ## External and owner-controlled blockers
 
-- Legal: clarify whether BSL 1.1 applies to this repository, correct the named Licensed
-  Work if needed, and reconcile the Apache/proprietary claims in `LICENSING.md`.
 - Publication: choose and authorize a package registry and confirm name ownership.
 - CI: observe the first GitHub Actions run on Python 3.11, 3.12, and 3.13.
-- Release: create owner-approved version/tag and publish artifacts; no push, tag, or
-  publication is performed by this productization pass.
+- Release: create an owner-approved version/tag and publish artifacts after CI passes.
 
 ## Known risks
 
@@ -206,7 +206,8 @@ retention design. A partial JSON state dump would be misleading.
 - External side effects are not automatically idempotent.
 - Handler output is measured after it is returned, so a malicious trusted handler can
   allocate memory before the 1 MiB serialization limit is applied.
-- Historical excluded code can confuse source readers until the portfolio cleanup occurs.
+- The old distribution/import/CLI aliases intentionally remain visible during the 0.1
+  compatibility window and should be removed only in a versioned breaking release.
 
 ## Final verification
 
@@ -214,26 +215,30 @@ Final verification ran from a fresh Python 3.11 virtual environment after
 `python -m pip install -e ".[dev]"`:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 6 source files;
-- `python -m pytest`: 40 passed, 92.30% branch-aware coverage;
-- `python -m bandit -q <all shipped modules>`: pass, no findings;
-- `python -m build`: pass, both sdist and wheel built in isolation;
-- a second empty virtual environment installed the wheel with `--no-deps` and completed
-  `helix-orchestration init`, `validate`, and `run`: pass;
-- wheel boundary inspection: 14 archive entries, the 6 supported package modules, no
-  historical agent, coordination, or workflow subpackages, and zero runtime
-  dependencies.
+- `python -m mypy`: pass, 12 source files across the primary and compatibility packages;
+- `python -m pytest`: 40 passed, 92.32% branch-aware coverage;
+- `python -m bandit -q -r src`: pass, no findings;
+- `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
+- a second empty environment installed the wheel with `--no-deps`; both command names,
+  both `python -m` entry points, `init`, `validate`, and `run` passed;
+- wheel boundary inspection: 22 archive entries, 7 primary package entries, 7 thin
+  compatibility entries, three legal files, no historical subpackages, and zero
+  unconditional runtime dependencies.
 
 Artifact inventory for the verified build:
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `helix_orchestration-0.1.0-py3-none-any.whl` | 19,408 | `6e2d923fb7e82a3ccf45a44716c68b0e961a8bf159c51b2e775bea31c9ca63fe` |
-| `helix_orchestration-0.1.0.tar.gz` | 33,498 | `9e6926b06576583b64d83084c83961f41856b2ce6c41a66fe158ff16a6a3c3cb` |
+| `samsarix_orchestration-0.1.0-py3-none-any.whl` | 26,023 | `677806733a448a75464e383ad7c709a9679694eec4b27ee88e65894f16e9032d` |
+| `samsarix_orchestration-0.1.0.tar.gz` | built | record in the external release attestation¹ |
+
+¹ This document is included in the source archive, so embedding the source archive's own
+hash inside it would change that hash. Record the final sdist checksum alongside the
+published release instead.
 
 ## Release disposition
 
-**Local release candidate with named owner gates.** The core product journey and local
-engineering gates are implemented. Public release remains gated by license
-clarification, package publication authorization/name confirmation, and observation of
-the first multi-version CI run.
+**Branded local release candidate with named owner gates.** The core product journey,
+MPL-2.0 licensing, Samsarix ownership, compatibility boundary, and local engineering
+gates are implemented. Registry publication remains gated by package-name confirmation
+and observation of the first multi-version CI run.

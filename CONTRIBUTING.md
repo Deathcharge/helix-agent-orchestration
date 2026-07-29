@@ -1,15 +1,13 @@
 # Contributing
 
-Helix Orchestration 0.1 accepts focused changes to the supported local workflow
-library, CLI, tests, and documentation. Historical subpackages excluded from the wheel
-need a separate extraction or portfolio-cleanup proposal; do not couple broad repairs
-there to a core runtime change.
+Samsarix Orchestration 0.1 accepts focused changes to the supported local
+workflow library, compatibility namespace, CLI, tests, and documentation.
 
 ## Setup
 
 ```bash
-git clone https://github.com/Deathcharge/helix-agent-orchestration.git
-cd helix-agent-orchestration
+git clone https://github.com/Deathcharge/samsarix-agent-orchestration.git
+cd samsarix-agent-orchestration
 python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
@@ -20,11 +18,12 @@ Activate the virtual environment using the command appropriate for your shell, t
 python -m ruff check .
 python -m mypy
 python -m pytest
-python -m bandit -q src/helix_orchestration/__init__.py src/helix_orchestration/actions.py src/helix_orchestration/cli.py src/helix_orchestration/runtime.py src/helix_orchestration/spec.py
+python -m bandit -q -r src
 python -m build
+python -m twine check dist/*
 ```
 
-All five commands must pass. Tests enforce at least 85% branch-aware coverage. Add
+All six commands must pass. Tests enforce at least 85% branch-aware coverage. Add
 source-backed tests for success, validation, failure, timeout, retry, blocked, or
 cancellation behavior that changes.
 
@@ -54,6 +53,9 @@ Do not commit credentials, generated build artifacts, coverage output, virtual
 environments, or private data. See [SECURITY.md](SECURITY.md) for the supported security
 boundary and reporting guidance.
 
-Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Licensing terms
-are controlled by the repository owner; contributors should review [LICENSE](LICENSE)
-and the unresolved status in [docs/PRODUCTIZATION.md](docs/PRODUCTIZATION.md).
+Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Unless stated
+otherwise before acceptance, contributions are submitted under
+[MPL-2.0](LICENSE), the same terms as the project. See
+[LICENSING.md](LICENSING.md) for ownership and future dual-licensing implications.
+
+Questions: contact@samsarix.com. Product support: support@samsarix.com.

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the supported Helix Orchestration package are recorded here.
+All notable changes to the supported Samsarix Orchestration package are recorded here.
 
 ## 0.1.0 - 2026-07-28
 
@@ -8,6 +8,9 @@ Initial honest standalone release candidate.
 
 ### Added
 
+- Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
+  compatibility aliases for the historical Helix names.
+- MPL-2.0 licensing, ownership notice, trademark guidance, and rename migration guide.
 - Versioned JSON workflow definitions and complete graph validation.
 - Bounded async DAG runner for registered sync or async Python actions.
 - Concurrency, timeout, retry, fail-fast, cancellation, and JSON output controls.
@@ -20,8 +23,10 @@ Initial honest standalone release candidate.
 
 - Reset the package maturity from an unsupported “production stable” 1.0 claim to an
   explicit 0.1 alpha release candidate.
-- Reduced the supported distribution to `helix_orchestration` root modules with no
-  runtime dependencies or private Helix services.
+- Reduced the supported distribution to the typed `samsarix_orchestration` runtime
+  plus small compatibility aliases, with no runtime dependencies or private services.
+- Removed the unsupported historical research forest from the active tree; revision
+  `6e10c5b` preserves it in Git history.
 
 ### Removed from the supported product
 
@@ -30,5 +35,5 @@ Initial honest standalone release candidate.
 - Conflicting requirements files, legacy setup metadata, stale examples, and mock-only
   core tests.
 
-Historical agent and coordination sources remain in the repository as excluded research
-evidence; they are not present in the 0.1 wheel.
+Historical agent and coordination sources remain available in Git revision `6e10c5b`;
+they are not present in the active tree or the 0.1 wheel.

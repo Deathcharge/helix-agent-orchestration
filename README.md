@@ -1,18 +1,17 @@
-# Helix Orchestration Workbench
+# Samsarix Orchestration
 
-Helix Orchestration is a local-first Python library and CLI for defining, validating,
+Samsarix Orchestration is a local-first Python library and CLI for defining, validating,
 and running small dependency-aware workflows. Application code registers ordinary
-sync or async Python callables as actions; Helix supplies graph validation, bounded
+sync or async Python callables as actions; Samsarix supplies graph validation, bounded
 concurrency, per-step timeouts and retries, failure propagation, and a JSON run report.
 
 It is for Python developers who want a transparent provider-neutral orchestration
 primitive before adopting a distributed or hosted workflow system. It does not include
-an LLM provider, execute model-generated code, expose a server, or require private Helix
+an LLM provider, execute model-generated code, expose a server, or require private
 infrastructure.
 
 Status: **0.1 alpha / local release candidate.** The implemented CLI and Python journey
-are tested. Public package publication is not yet authorized, and the repository's
-conflicting license documents require owner clarification before a public release.
+are tested. The distribution has not yet been published to a package index.
 
 ## What works
 
@@ -33,30 +32,30 @@ provider adapters, and a remote API are deliberately out of scope for 0.1.
 Prerequisites: Git and Python 3.11 or newer.
 
 ```bash
-git clone https://github.com/Deathcharge/helix-agent-orchestration.git
-cd helix-agent-orchestration
+git clone https://github.com/Deathcharge/samsarix-agent-orchestration.git
+cd samsarix-agent-orchestration
 python -m venv .venv
 python -m pip install .
-helix-orchestration init workflow.json
-helix-orchestration validate workflow.json
-helix-orchestration run workflow.json --output run.json
+samsarix-orchestration init workflow.json
+samsarix-orchestration validate workflow.json
+samsarix-orchestration run workflow.json --output run.json
 ```
 
 The final command exits with `0` and prints a JSON report whose workflow status is
 `succeeded`. It also writes the same report to `run.json`. Existing workflow and
 report files are never replaced unless `--force` or `--force-output` is explicit.
 
-You can use `python -m helix_orchestration` instead of the installed command.
+You can use `python -m samsarix_orchestration` instead of the installed command.
 
 ## CLI
 
 ```text
-helix-orchestration --version
-helix-orchestration actions
-helix-orchestration init PATH [--force]
-helix-orchestration validate PATH [--json]
-helix-orchestration run PATH [--input JSON | --input-file PATH]
-                              [--output PATH] [--force-output]
+samsarix-orchestration --version
+samsarix-orchestration actions
+samsarix-orchestration init PATH [--force]
+samsarix-orchestration validate PATH [--json]
+samsarix-orchestration run PATH [--input JSON | --input-file PATH]
+                                 [--output PATH] [--force-output]
 ```
 
 Exit codes are stable:
@@ -75,7 +74,7 @@ schema and [the architecture](docs/ARCHITECTURE.md) for execution semantics.
 ```python
 import asyncio
 
-from helix_orchestration import ActionContext, WorkflowDefinition, WorkflowRunner
+from samsarix_orchestration import ActionContext, WorkflowDefinition, WorkflowRunner
 
 
 async def fetch(_context: ActionContext) -> dict[str, list[int]]:
@@ -121,7 +120,9 @@ python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m mypy
 python -m pytest
+python -m bandit -q -r src
 python -m build
+python -m twine check dist/*
 ```
 
 The test command enforces at least 85% branch-aware coverage. CI runs linting, strict
@@ -131,21 +132,20 @@ has no runtime dependencies, while bounded development ranges live in `pyproject
 
 ## Distribution
 
-The supported artifact is the `helix_orchestration` package built from the `src`
-layout and the `helix-orchestration` console script:
+The supported artifact is the `samsarix_orchestration` package built from the
+`src` layout and the `samsarix-orchestration` console script:
 
 ```bash
 python -m build
-python -m pip install --force-reinstall --no-deps dist/helix_orchestration-0.1.0-py3-none-any.whl
-helix-orchestration --version
+python -m pip install --force-reinstall --no-deps dist/samsarix_orchestration-0.1.0-py3-none-any.whl
+samsarix-orchestration --version
 ```
 
-The large historical agent, coordination, monitoring, plugin, and UCF modules under
-`src/helix_orchestration/` are retained as research evidence but are excluded from the
-0.1 wheel, public API, type/lint gate, examples, and product claims. They include
-incomplete imports and simulations and must not be treated as supported runtime code.
-The rationale and follow-up are recorded in
-[docs/PRODUCTIZATION.md](docs/PRODUCTIZATION.md).
+The `helix_orchestration` import, `python -m helix_orchestration`, and
+`helix-orchestration` command are compatibility aliases during the `0.1.x` series.
+They delegate to the Samsarix implementation and do not maintain a second runtime. See
+[the migration guide](docs/MIGRATION.md). Unsupported historical research modules were
+removed from the active tree and remain recoverable from Git revision `6e10c5b`.
 
 ## Security, privacy, and cost
 
@@ -156,7 +156,7 @@ Concurrency, step count, timeouts, retries, input size, and output size are boun
 Cancellation propagates to running async actions.
 
 Action handlers are trusted application code and have the full privileges of the Python
-process. Helix is orchestration, not a sandbox. A handler that calls a model or external
+process. Samsarix Orchestration is not a sandbox. A handler that calls a model or external
 API owns its authentication, destination validation, timeout, cancellation, privacy,
 and cost controls. The built-in CLI path has no API or operating cost beyond local
 compute and disk space for an explicitly requested report.
@@ -166,9 +166,14 @@ provided; the caller controls report retention and file permissions.
 
 ## Project and license status
 
-Contributions are described in [CONTRIBUTING.md](CONTRIBUTING.md). The current
-[LICENSE](LICENSE) file is Business Source License 1.1 with a June 16, 2027 change date,
-while [LICENSING.md](LICENSING.md) describes an Apache/proprietary model. The package
-distribution includes all three existing legal files, but only the owner can resolve
-that conflict and confirm that the named Licensed Work covers this repository. No
-license was selected or changed during productization.
+Copyright 2026 Samsarix LLC and contributors. Source code is licensed under the
+[Mozilla Public License 2.0](LICENSE). MPL-2.0 permits commercial use and combination
+with proprietary applications while requiring distributed modifications to covered
+source files to remain available under MPL-2.0.
+
+See [LICENSING.md](LICENSING.md) for the model and historical-license note,
+[TRADEMARKS.md](TRADEMARKS.md) for brand use, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
+
+- General and licensing questions: contact@samsarix.com
+- Product support and private security reports: support@samsarix.com

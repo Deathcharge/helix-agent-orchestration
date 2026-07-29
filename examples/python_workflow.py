@@ -1,8 +1,11 @@
+# Copyright (c) 2026 Samsarix LLC
+# SPDX-License-Identifier: MPL-2.0
+
 """Run a real two-step workflow with application-defined Python actions."""
 
 import asyncio
 
-from helix_orchestration import ActionContext, WorkflowDefinition, WorkflowRunner
+from samsarix_orchestration import ActionContext, WorkflowDefinition, WorkflowRunner
 
 
 async def fetch(_context: ActionContext) -> dict[str, list[int]]:

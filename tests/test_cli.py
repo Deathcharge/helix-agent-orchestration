@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Samsarix LLC
+# SPDX-License-Identifier: MPL-2.0
+
 from __future__ import annotations
 
 import json
@@ -5,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from helix_orchestration.cli import MAX_INPUT_BYTES, build_parser, main
+from samsarix_orchestration.cli import MAX_INPUT_BYTES, build_parser, legacy_main, main
 
 
 def test_complete_cli_journey(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -20,7 +23,7 @@ def test_complete_cli_journey(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     validation = json.loads(capsys.readouterr().out)
     assert validation == {
         "max_concurrency": 2,
-        "name": "hello-helix",
+        "name": "hello-samsarix",
         "steps": 3,
         "valid": True,
     }
@@ -28,7 +31,7 @@ def test_complete_cli_journey(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     assert main(["run", str(workflow), "--output", str(report)]) == 0
     run = json.loads(capsys.readouterr().out)
     assert run["status"] == "succeeded"
-    assert run["steps"][-1]["output"] == {"characters": 16, "words": 3}
+    assert run["steps"][-1]["output"] == {"characters": 19, "words": 3}
     assert json.loads(report.read_text(encoding="utf-8")) == run
 
 
@@ -133,3 +136,11 @@ def test_actions_parser_and_version(capsys: pytest.CaptureFixture[str]) -> None:
         build_parser().parse_args(["--version"])
     assert raised.value.code == 0
     assert "0.1.0" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as legacy:
+        build_parser(prog="helix-orchestration").parse_args(["--version"])
+    assert legacy.value.code == 0
+    assert "helix-orchestration 0.1.0" in capsys.readouterr().out
+
+    assert legacy_main(["actions"]) == 0
+    assert "word_count" in capsys.readouterr().out
