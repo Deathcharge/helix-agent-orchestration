@@ -22,6 +22,7 @@ are tested. The distribution has not yet been published to a package index.
 - Per-step timeouts, 0–10 retries, bounded retry delays, and fail-fast behavior.
 - Opt-in atomic JSON checkpoints that resume without repeating verified successful steps.
 - Stable per-step idempotency keys for safely designed external side effects.
+- Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
 - JSON-safe inputs, outputs, errors, and terminal step states.
 - A provider-free CLI example using four deterministic built-in actions.
 - No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
@@ -59,6 +60,7 @@ samsarix-orchestration validate PATH [--json]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
                                  [--output PATH] [--force-output]
                                  [--checkpoint-dir PATH] [--run-id ID] [--resume]
+                                 [--events]
 ```
 
 Exit codes are stable:
@@ -71,6 +73,10 @@ Exit codes are stable:
 Workflow and input files are limited to 1 MiB. Each step result is also limited to
 1 MiB by default. See [the workflow format](docs/WORKFLOW_FORMAT.md) for the complete
 schema and [the architecture](docs/ARCHITECTURE.md) for execution semantics.
+
+`--events` writes one compact, privacy-minimized JSON event per line to stderr while the
+final run report remains on stdout. This makes CLI progress consumable without parsing
+human text or mixing it with the terminal report.
 
 ## Python API
 
@@ -115,6 +121,38 @@ The same runnable example is in [examples/python_workflow.py](examples/python_wo
 An action receives an `ActionContext` containing the workflow input, its validated step
 definition, dependency outputs, workflow name, and current attempt number. Handlers run
 with the privileges of the Python process; only register trusted code.
+
+## Observe progress without exposing payloads
+
+Pass one or more sync or async event handlers when constructing the runner:
+
+```python
+from samsarix_orchestration import WorkflowEvent
+
+
+async def observe(event: WorkflowEvent) -> None:
+    await metrics.increment(f"workflow.{event.kind.value}")
+
+
+runner = WorkflowRunner(actions, event_handlers=(observe,))
+```
+
+Within each run, handlers receive monotonically sequenced events one at a time, including
+attempts, retries, restored steps, checkpoint commits, failures, blocks, and cancellation. Event
+payloads deliberately exclude workflow inputs, step parameters, outputs, dependency
+values, error messages, and idempotency keys. Run, workflow, and step identifiers plus
+error type names remain operational data and may still be sensitive.
+
+Delivery is ordered and backpressured: the next lifecycle transition waits for every
+handler. A handler exception raises `EventDeliveryError` rather than silently losing an
+audit event. Wrap a non-critical telemetry sink in its own error policy if business work
+must continue during a telemetry outage. The runnable
+[observer example](examples/observe_workflow.py) adapts the stream to JSON logs and
+counters using only the standard library.
+
+Ordering is per run. If one runner executes multiple runs concurrently, a shared sync
+handler can be called from different worker threads and must provide its own cross-run
+thread safety.
 
 ## Resume expensive or side-effecting work
 
@@ -195,7 +233,9 @@ API owns its authentication, destination validation, timeout, cancellation, priv
 and cost controls. The built-in CLI path has no API or operating cost beyond local
 compute and disk space for an explicitly requested report.
 
-No telemetry is collected. Run inputs and outputs stay in memory unless `--output` is
+No telemetry is collected implicitly. Lifecycle events are delivered only to handlers
+the application explicitly registers or when the CLI's `--events` flag is present. Run
+inputs and outputs stay in memory unless `--output` is
 provided or checkpointing is explicitly enabled. Checkpoints contain successful step
 outputs in plaintext JSON; the caller controls their directory permissions, encryption,
 retention, and deletion.

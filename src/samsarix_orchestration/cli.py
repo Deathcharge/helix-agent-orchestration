@@ -17,6 +17,7 @@ from typing import Any
 from . import __version__
 from .actions import builtin_actions
 from .checkpoints import JsonDirectoryCheckpointStore
+from .events import WorkflowEvent
 from .runtime import WorkflowExecutionError, WorkflowRunner
 from .spec import WorkflowSpecError, load_workflow
 
@@ -99,6 +100,11 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
         action="store_true",
         help="Resume a matching checkpoint; requires --checkpoint-dir and --run-id.",
     )
+    run_parser.add_argument(
+        "--events",
+        action="store_true",
+        help="Stream privacy-minimized lifecycle events as JSON Lines to stderr.",
+    )
 
     subparsers.add_parser("actions", help="List the safe built-in CLI actions.")
     return parser
@@ -152,7 +158,10 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
                 else None
             )
             result = asyncio.run(
-                WorkflowRunner(builtin_actions()).run(
+                WorkflowRunner(
+                    builtin_actions(),
+                    event_handlers=(_print_event,) if args.events else (),
+                ).run(
                     workflow,
                     workflow_input,
                     run_id=args.run_id,
@@ -224,6 +233,10 @@ def _print_spec_error(exc: WorkflowSpecError) -> None:
     print(f"Validation error: {exc}", file=sys.stderr)
     for issue in exc.issues:
         print(f"  {issue.path}: {issue.message} [{issue.code}]", file=sys.stderr)
+
+
+def _print_event(event: WorkflowEvent) -> None:
+    print(json.dumps(event.to_dict(), separators=(",", ":")), file=sys.stderr, flush=True)
 
 
 def _write_json(path: Path, value: Any, *, overwrite: bool) -> None:

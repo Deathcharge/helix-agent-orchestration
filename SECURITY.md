@@ -20,6 +20,13 @@ responsible for directory access controls, encryption, retention, deletion, back
 ensuring only one writer owns a run. Checkpoints are integrity-checked for compatibility,
 not cryptographically authenticated against a malicious local writer.
 
+Lifecycle observation is opt-in. Version 1 events exclude workflow inputs, parameters,
+outputs, dependency values, error messages, and idempotency keys. They do include run,
+workflow, and step identifiers plus exception type names. Treat those fields as
+operational data, register only trusted event handlers, and apply authentication,
+redaction, transport security, retention, and access controls in any external telemetry
+adapter. Event handlers execute with application privileges and are not a sandbox.
+
 ## Reporting
 
 Report suspected vulnerabilities through a private GitHub security advisory for

@@ -14,4 +14,5 @@ def test_public_api_has_release_version() -> None:
         helix_orchestration.JsonDirectoryCheckpointStore
         is samsarix_orchestration.JsonDirectoryCheckpointStore
     )
+    assert helix_orchestration.WorkflowEvent is samsarix_orchestration.WorkflowEvent
     assert build_legacy_parser().prog == "helix-orchestration"

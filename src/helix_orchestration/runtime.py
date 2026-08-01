@@ -3,12 +3,18 @@
 
 """Compatibility exports for :mod:`samsarix_orchestration.runtime`."""
 
+from samsarix_orchestration.events import (
+    EventHandler,
+    StepState,
+    WorkflowEvent,
+    WorkflowEventKind,
+)
 from samsarix_orchestration.runtime import (
     ActionContext,
     ActionHandler,
     CheckpointStore,
+    EventDeliveryError,
     StepResult,
-    StepState,
     WorkflowCheckpoint,
     WorkflowExecutionError,
     WorkflowRunner,
@@ -19,10 +25,14 @@ __all__ = [
     "ActionContext",
     "ActionHandler",
     "CheckpointStore",
+    "EventDeliveryError",
+    "EventHandler",
     "StepResult",
     "StepState",
     "WorkflowCheckpoint",
     "WorkflowExecutionError",
+    "WorkflowEvent",
+    "WorkflowEventKind",
     "WorkflowRunResult",
     "WorkflowRunner",
 ]
