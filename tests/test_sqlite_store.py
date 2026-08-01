@@ -106,7 +106,6 @@ def test_lists_payload_free_summaries_newest_first_and_deletes(tmp_path: Path) -
 
 def test_concurrent_distinct_runs_are_committed(tmp_path: Path) -> None:
     database = tmp_path / "runs.db"
-    SqliteCheckpointStore(database).list_summaries()
 
     def save(index: int) -> None:
         SqliteCheckpointStore(database).save(
@@ -340,6 +339,14 @@ def test_lock_timeout_fails_boundedly(tmp_path: Path) -> None:
     lock = sqlite3.connect(database, isolation_level=None)
     try:
         lock.execute("BEGIN IMMEDIATE")
+        assert (
+            SqliteCheckpointStore(
+                database,
+                busy_timeout_ms=1,
+                create=False,
+            ).list_summaries()
+            == ()
+        )
         with pytest.raises(WorkflowExecutionError, match="locked"):
             SqliteCheckpointStore(database, busy_timeout_ms=1).save(checkpoint())
     finally:

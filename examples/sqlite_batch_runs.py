@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 
 from samsarix_orchestration import (
@@ -30,12 +31,13 @@ async def main() -> None:
     )
     store = SqliteCheckpointStore(Path(".samsarix-runs") / "imports.db")
     runner = WorkflowRunner({"normalize": normalize})
+    batch = uuid.uuid4().hex[:8]
     await asyncio.gather(
         *(
             runner.run(
                 workflow,
                 {"value": value},
-                run_id=f"import-{index}",
+                run_id=f"import-{batch}-{index}",
                 checkpoint_store=store,
             )
             for index, value in enumerate((" Alpha ", " BETA ", " Gamma "), start=1)

@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
             if args.checkpoint_dir is not None:
                 checkpoint_store = JsonDirectoryCheckpointStore(args.checkpoint_dir)
             elif args.checkpoint_db is not None:
-                checkpoint_store = SqliteCheckpointStore(args.checkpoint_db)
+                checkpoint_store = _sqlite_store(args.checkpoint_db)
             else:
                 checkpoint_store = None
             result = asyncio.run(
@@ -268,7 +268,7 @@ def _run_id(value: str) -> str:
 
 
 def _manage_runs(args: argparse.Namespace) -> int:
-    store = SqliteCheckpointStore(args.database, create=False)
+    store = _sqlite_store(args.database, create=False)
     if args.runs_command == "list":
         summaries = store.list_summaries(limit=args.limit)
         if args.as_json:
@@ -301,6 +301,13 @@ def _manage_runs(args: argparse.Namespace) -> int:
         print(f"Deleted checkpoint {args.run_id}")
         return 0
     raise WorkflowSpecError(f"Unknown runs command: {args.runs_command}")
+
+
+def _sqlite_store(database: Path, *, create: bool = True) -> SqliteCheckpointStore:
+    try:
+        return SqliteCheckpointStore(database, create=create)
+    except ValueError as exc:
+        raise WorkflowSpecError(str(exc)) from exc
 
 
 def _privacy_safe_checkpoint(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:

@@ -286,6 +286,9 @@ def test_cli_sqlite_errors_and_storage_exclusion(
     assert main(["runs", "list", str(tmp_path / "missing.db")]) == 1
     assert "does not exist" in capsys.readouterr().err
 
+    assert main(["runs", "list", ":memory:"]) == 2
+    assert "filesystem path" in capsys.readouterr().err
+
     with pytest.raises(SystemExit) as invalid_run_id:
         main(["runs", "show", str(tmp_path / "missing.db"), "../escape"])
     assert invalid_run_id.value.code == 2

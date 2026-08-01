@@ -313,8 +313,12 @@ class SqliteCheckpointStore:
         try:
             was_new = not self.database.exists() or self.database.stat().st_size == 0
             connection = self._raw_connection()
-            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("BEGIN")
             application_id = _pragma_int(connection, "application_id")
+            if application_id == 0:
+                connection.commit()
+                connection.execute("BEGIN IMMEDIATE")
+                application_id = _pragma_int(connection, "application_id")
             if application_id == 0:
                 user_tables = connection.execute(
                     "SELECT name FROM sqlite_schema "
