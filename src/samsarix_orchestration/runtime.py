@@ -1141,6 +1141,8 @@ class WorkflowRunner:
         workflow_version: int,
         run_id: str,
     ) -> None:
+        if checkpoint.run_id != run_id:
+            raise WorkflowExecutionError("Checkpoint run_id does not match the requested run.")
         if checkpoint.version != workflow_version:
             raise WorkflowExecutionError(
                 "Checkpoint version does not match the workflow schema version."
