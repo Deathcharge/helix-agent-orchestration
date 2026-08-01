@@ -173,10 +173,11 @@ raises `EventDeliveryError`; already completed external effects are not rolled b
 
 `build_workflow_plan(workflow)` and `samsarix-orchestration plan` revalidate the definition
 and derive a plan without resolving action handlers or executing code. Plan schema version
-1 contains the workflow schema version, ordered step inventory, dependency/dependent
-edges, roots, leaves, maximum concurrency, deterministic dependency waves, approval flags,
-and one longest dependency chain. A wave's `approval_barrier` is true when any step in
-that wave has an approval policy.
+1 contains the workflow schema version and canonical digest, ordered step inventory,
+dependency/dependent edges, roots, leaves, maximum concurrency, deterministic dependency
+waves, approval flags, and one longest dependency chain. The digest uses the same
+canonical JSON contract as checkpoints. A wave's `approval_barrier` is true when any step
+in that wave has an approval policy.
 
 Text is intended for terminals, JSON is the stable machine interface, and Mermaid is
 offline source for an application-selected renderer. Plans do not predict handler duration,

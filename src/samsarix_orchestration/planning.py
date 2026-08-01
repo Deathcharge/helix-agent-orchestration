@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 from dataclasses import dataclass
@@ -68,6 +69,7 @@ class WorkflowPlan:
     """Static execution surface derived from one validated workflow."""
 
     workflow: str
+    workflow_digest: str
     workflow_schema_version: int
     max_concurrency: int
     roots: tuple[str, ...]
@@ -97,6 +99,7 @@ class WorkflowPlan:
         return {
             "schema_version": self.schema_version,
             "workflow": self.workflow,
+            "workflow_digest": self.workflow_digest,
             "workflow_schema_version": self.workflow_schema_version,
             "step_count": len(self.steps),
             "edge_count": self.edge_count,
@@ -116,6 +119,7 @@ class WorkflowPlan:
         lines = [
             f"Workflow: {json.dumps(self.workflow, ensure_ascii=False)} "
             f"(schema {self.workflow_schema_version})",
+            f"Workflow digest: {self.workflow_digest}",
             f"Steps: {len(self.steps)} | Edges: {self.edge_count} | "
             f"Waves: {len(self.waves)} | Max concurrency: {self.max_concurrency}",
             f"Roots: {', '.join(self.roots)}",
@@ -226,6 +230,7 @@ def build_workflow_plan(workflow: WorkflowDefinition) -> WorkflowPlan:
 
     return WorkflowPlan(
         workflow=workflow.name,
+        workflow_digest=_json_digest(workflow.to_dict()),
         workflow_schema_version=workflow.version,
         max_concurrency=workflow.max_concurrency,
         roots=tuple(step.id for step in workflow.steps if not step.dependencies),
@@ -234,6 +239,17 @@ def build_workflow_plan(workflow: WorkflowDefinition) -> WorkflowPlan:
         steps=planned_steps,
         waves=tuple(waves),
     )
+
+
+def _json_digest(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 __all__ = [

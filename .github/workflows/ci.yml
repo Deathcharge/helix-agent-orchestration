@@ -60,7 +60,7 @@ jobs:
           verify_dir="$(mktemp -d)"
           samsarix-orchestration init "$verify_dir/approval.json" --approval
           samsarix-orchestration plan "$verify_dir/approval.json" --format json > "$verify_dir/plan.json"
-          python -c "import json,sys; p=json.load(open(sys.argv[1])); assert p['approval_steps'] == ['publish']; assert p['wave_count'] == 2" "$verify_dir/plan.json"
+          python -c "import json,sys; p=json.load(open(sys.argv[1])); assert p['approval_steps'] == ['publish']; assert p['wave_count'] == 2; assert len(p['workflow_digest']) == 64" "$verify_dir/plan.json"
           samsarix-orchestration plan "$verify_dir/approval.json" --format mermaid | grep -q "class n1 approval"
           set +e
           samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval > "$verify_dir/paused.json"

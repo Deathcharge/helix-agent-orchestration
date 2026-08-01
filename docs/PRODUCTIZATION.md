@@ -271,7 +271,7 @@ authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
 - `python -m mypy`: pass, 20 source files across the primary and compatibility packages;
-- `python -m pytest`: 123 passed, 89.23% branch-aware coverage;
+- `python -m pytest`: 124 passed, 89.25% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,

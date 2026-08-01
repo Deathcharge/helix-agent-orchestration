@@ -11,7 +11,9 @@ import pytest
 from samsarix_orchestration import (
     PLAN_SCHEMA_VERSION,
     ApprovalPolicy,
+    InMemoryCheckpointStore,
     WorkflowDefinition,
+    WorkflowRunner,
     WorkflowSpecError,
     WorkflowStep,
     build_workflow_plan,
@@ -55,6 +57,7 @@ def test_plan_derives_deterministic_waves_and_graph_metadata() -> None:
     plan = build_workflow_plan(planning_workflow())
 
     assert plan.schema_version == PLAN_SCHEMA_VERSION == 1
+    assert len(plan.workflow_digest) == 64
     assert plan.roots == ("source",)
     assert plan.leaves == ("publish", "audit")
     assert plan.approval_steps == ("publish",)
@@ -75,6 +78,7 @@ def test_plan_derives_deterministic_waves_and_graph_metadata() -> None:
 
     rendered = plan.to_dict()
     assert rendered["step_count"] == 4
+    assert rendered["workflow_digest"] == plan.workflow_digest
     assert rendered["wave_count"] == 3
     assert rendered["max_concurrency"] == 2
     assert rendered["waves"][-1] == {
@@ -100,6 +104,28 @@ def test_plan_text_and_mermaid_are_stable_and_omit_approval_prompt() -> None:
     assert "n3 --> n0" in mermaid
     assert "class n0 approval" in mermaid
     assert "Publish the release?" not in mermaid
+
+
+@pytest.mark.asyncio
+async def test_plan_digest_matches_runtime_checkpoint_identity() -> None:
+    workflow = planning_workflow()
+    plan = build_workflow_plan(workflow)
+    store = InMemoryCheckpointStore()
+    actions = {
+        name: (lambda context: context.step.id)
+        for name in ("publish", "load", "audit", "transform")
+    }
+
+    paused = await WorkflowRunner(actions).run(
+        workflow,
+        run_id="plan-digest",
+        checkpoint_store=store,
+    )
+
+    assert paused.status == "paused"
+    checkpoint = store.load("plan-digest")
+    assert checkpoint is not None
+    assert plan.workflow_digest == checkpoint.workflow_digest
 
 
 def test_plan_revalidates_programmatic_workflows() -> None:

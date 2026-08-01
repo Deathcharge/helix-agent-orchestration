@@ -104,7 +104,8 @@ samsarix-orchestration plan workflow.json --format mermaid > workflow.mmd
 
 The plan preserves workflow order for its step inventory while deriving deterministic
 dependency waves, roots, leaves, dependants, the longest dependency chain, maximum wave
-width, retry-attempt ceilings, and approval-barrier locations. A wave marked as an
+width, retry-attempt ceilings, the canonical workflow digest, and approval-barrier
+locations. A wave marked as an
 approval barrier reflects the runtime's global rule: none of that dependency-ready group
 starts while a request remains pending. Mermaid output uses internal node IDs and omits
 approval prompts; it is source text only, so rendering remains an explicit caller choice.
