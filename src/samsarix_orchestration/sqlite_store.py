@@ -9,6 +9,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -355,7 +356,7 @@ class SqliteCheckpointStore:
             elif application_id != SQLITE_APPLICATION_ID:
                 raise WorkflowExecutionError("SQLite database belongs to another application.")
             connection.commit()
-            mode_row = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+            mode_row = self._enable_wal(connection)
             if mode_row is None or str(mode_row[0]).casefold() != "wal":
                 raise WorkflowExecutionError("SQLite database could not enable WAL mode.")
             self._validate_identity(connection)
@@ -387,6 +388,21 @@ class SqliteCheckpointStore:
         except BaseException:
             connection.close()
             raise
+
+    def _enable_wal(self, connection: sqlite3.Connection) -> tuple[Any, ...] | None:
+        """Enable WAL despite a concurrent store finishing first-time initialization."""
+        deadline = time.monotonic() + (self.busy_timeout_ms / 1_000)
+        delay_seconds = 0.001
+        while True:
+            try:
+                row = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+                return None if row is None else tuple(row)
+            except sqlite3.OperationalError as exc:
+                remaining = deadline - time.monotonic()
+                if not _is_lock_error(exc) or remaining <= 0:
+                    raise
+                time.sleep(min(delay_seconds, remaining))
+                delay_seconds = min(delay_seconds * 2, 0.05)
 
     def _validate_identity(self, connection: sqlite3.Connection) -> None:
         if _pragma_int(connection, "application_id") != SQLITE_APPLICATION_ID:
@@ -457,6 +473,14 @@ def _pragma_int(connection: sqlite3.Connection, name: str) -> int:
 def _rollback(connection: sqlite3.Connection) -> None:
     if connection.in_transaction:
         connection.rollback()
+
+
+def _is_lock_error(error: sqlite3.OperationalError) -> bool:
+    code = getattr(error, "sqlite_errorcode", None)
+    return type(code) is int and code & 0xFF in {
+        sqlite3.SQLITE_BUSY,
+        sqlite3.SQLITE_LOCKED,
+    }
 
 
 __all__ = [
