@@ -7,15 +7,20 @@ New applications should import :mod:`samsarix_orchestration`.
 """
 
 from samsarix_orchestration import (
+    DEFAULT_MAX_SUBPROCESS_INPUT_BYTES,
+    DEFAULT_MAX_SUBPROCESS_STDERR_BYTES,
+    DEFAULT_MAX_SUBPROCESS_STDOUT_BYTES,
     MAX_APPROVAL_ACTOR_CHARACTERS,
     MAX_APPROVAL_PROMPT_CHARACTERS,
     MAX_APPROVAL_REASON_CHARACTERS,
     MAX_CHECKPOINT_BYTES,
     MAX_LIST_LIMIT,
+    MAX_SUBPROCESS_STREAM_BYTES,
     MAX_WORKFLOW_BYTES,
     PLAN_SCHEMA_VERSION,
     SQLITE_APPLICATION_ID,
     SQLITE_SCHEMA_VERSION,
+    SUBPROCESS_PROTOCOL_VERSION,
     ActionContext,
     ApprovalDecision,
     ApprovalDecisionKind,
@@ -37,6 +42,8 @@ from samsarix_orchestration import (
     SqliteCheckpointStore,
     StepResult,
     StepState,
+    SubprocessActionError,
+    SubprocessActionHandler,
     ValidationIssue,
     WorkflowCheckpoint,
     WorkflowDefinition,
@@ -51,6 +58,8 @@ from samsarix_orchestration import (
     __version__,
     build_workflow_plan,
     load_workflow,
+    subprocess_action,
+    subprocess_envelope,
 )
 
 __all__ = [
@@ -60,6 +69,10 @@ __all__ = [
     "MAX_APPROVAL_REASON_CHARACTERS",
     "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_INPUT_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_STDERR_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_STDOUT_BYTES",
+    "MAX_SUBPROCESS_STREAM_BYTES",
     "PLAN_SCHEMA_VERSION",
     "ActionContext",
     "ApprovalDecision",
@@ -82,6 +95,9 @@ __all__ = [
     "SQLITE_APPLICATION_ID",
     "SQLITE_SCHEMA_VERSION",
     "SqliteCheckpointStore",
+    "SUBPROCESS_PROTOCOL_VERSION",
+    "SubprocessActionError",
+    "SubprocessActionHandler",
     "StepResult",
     "StepState",
     "ValidationIssue",
@@ -98,4 +114,6 @@ __all__ = [
     "__version__",
     "build_workflow_plan",
     "load_workflow",
+    "subprocess_action",
+    "subprocess_envelope",
 ]
