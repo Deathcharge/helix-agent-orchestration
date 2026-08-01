@@ -17,6 +17,8 @@ Initial honest standalone release candidate.
 - Stable action idempotency keys and a runnable side-effect recovery example.
 - Ordered schema-versioned lifecycle events, explicit observer failure semantics, and
   privacy-minimized CLI JSON Lines progress output.
+- Side-effect-free workflow plans with dependency waves, approval-barrier markers, stable
+  JSON metadata, and offline Mermaid source export.
 - Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.

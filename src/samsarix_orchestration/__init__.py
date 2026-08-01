@@ -9,6 +9,13 @@ from .checkpoints import (
     JsonDirectoryCheckpointStore,
 )
 from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
+from .planning import (
+    PLAN_SCHEMA_VERSION,
+    PlannedStep,
+    PlanWave,
+    WorkflowPlan,
+    build_workflow_plan,
+)
 from .runtime import (
     MAX_APPROVAL_ACTOR_CHARACTERS,
     MAX_APPROVAL_REASON_CHARACTERS,
@@ -50,6 +57,7 @@ __all__ = [
     "MAX_APPROVAL_REASON_CHARACTERS",
     "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
+    "PLAN_SCHEMA_VERSION",
     "ActionContext",
     "ApprovalDecision",
     "ApprovalDecisionKind",
@@ -62,6 +70,8 @@ __all__ = [
     "EventHandler",
     "InMemoryCheckpointStore",
     "JsonDirectoryCheckpointStore",
+    "PlanWave",
+    "PlannedStep",
     "SQLITE_APPLICATION_ID",
     "SQLITE_SCHEMA_VERSION",
     "SqliteCheckpointStore",
@@ -71,12 +81,14 @@ __all__ = [
     "WorkflowDefinition",
     "WorkflowEvent",
     "WorkflowEventKind",
+    "WorkflowPlan",
     "WorkflowCheckpoint",
     "WorkflowExecutionError",
     "WorkflowRunResult",
     "WorkflowRunner",
     "WorkflowSpecError",
     "WorkflowStep",
+    "build_workflow_plan",
     "load_workflow",
 ]
 

@@ -19,6 +19,7 @@ from . import __version__
 from .actions import builtin_actions
 from .checkpoints import JsonDirectoryCheckpointStore
 from .events import WorkflowEvent
+from .planning import build_workflow_plan
 from .runtime import (
     MAX_APPROVAL_ACTOR_CHARACTERS,
     MAX_APPROVAL_REASON_CHARACTERS,
@@ -117,6 +118,18 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
     )
     validate_parser.add_argument("path", type=Path)
     validate_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    plan_parser = subparsers.add_parser(
+        "plan",
+        help="Inspect dependency waves and approval barriers without executing actions.",
+    )
+    plan_parser.add_argument("path", type=Path)
+    plan_parser.add_argument(
+        "--format",
+        choices=("text", "json", "mermaid"),
+        default="text",
+        help="Output format; Mermaid emits source only and makes no network request.",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run a workflow with built-in actions.")
     run_parser.add_argument("path", type=Path)
@@ -246,6 +259,15 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
                     f"({len(workflow.steps)} steps, "
                     f"max concurrency {workflow.max_concurrency})"
                 )
+            return 0
+        if args.command == "plan":
+            plan = build_workflow_plan(load_workflow(args.path))
+            if args.format == "json":
+                print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
+            elif args.format == "mermaid":
+                print(plan.to_mermaid(), end="")
+            else:
+                print(plan.to_text(), end="")
             return 0
         if args.command == "actions":
             for name in sorted(builtin_actions()):

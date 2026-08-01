@@ -47,6 +47,12 @@ events omit prompts, labels, reasons, and outputs but retain request/run/step id
 and decision kinds. Protect all of these according to their classification and avoid
 placing credentials in prompts or reasons.
 
+Static planning revalidates workflow data but does not import handlers or execute actions.
+Text, JSON, and Mermaid plans expose workflow, step, action, agent, and dependency
+identifiers as operational metadata; text and JSON also expose the canonical workflow
+digest. Parameters and approval prompts are omitted. Mermaid uses generated node IDs and
+emits source only; the caller chooses and trusts any renderer.
+
 Lifecycle observation is opt-in. Events exclude workflow inputs, parameters,
 outputs, dependency values, error messages, and idempotency keys. They do include run,
 workflow, and step identifiers plus exception type names. Treat those fields as

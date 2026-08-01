@@ -1,7 +1,7 @@
 # Samsarix Orchestration
 
 Samsarix Orchestration is a local-first Python library and CLI for defining, validating,
-and running small dependency-aware workflows. Application code registers ordinary
+planning, and running small dependency-aware workflows. Application code registers ordinary
 sync or async Python callables as actions; Samsarix supplies graph validation, bounded
 concurrency, per-step timeouts and retries, failure propagation, and a JSON run report.
 
@@ -27,6 +27,7 @@ not yet been published to a package index.
 - Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
 - Schema-v2 pre-action approval gates with durable approve/reject decisions and a strict
   no-handler-before-approval barrier.
+- Side-effect-free dependency plans and offline Mermaid graph export for preflight review.
 - A separately installed consumer proving resume, idempotency, and event contracts across
   a real package boundary.
 - JSON-safe inputs, outputs, errors, and terminal step states.
@@ -47,6 +48,7 @@ python -m venv .venv
 python -m pip install .
 samsarix-orchestration init workflow.json
 samsarix-orchestration validate workflow.json
+samsarix-orchestration plan workflow.json
 samsarix-orchestration run workflow.json --output run.json
 ```
 
@@ -63,6 +65,7 @@ samsarix-orchestration --version
 samsarix-orchestration actions
 samsarix-orchestration init PATH [--force] [--approval]
 samsarix-orchestration validate PATH [--json]
+samsarix-orchestration plan PATH [--format text|json|mermaid]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
                                  [--output PATH] [--force-output]
                                  [--checkpoint-dir PATH | --checkpoint-db PATH]
@@ -87,6 +90,27 @@ Exit codes are stable:
 Workflow and input files are limited to 1 MiB. Each step result is also limited to
 1 MiB by default. See [the workflow format](docs/WORKFLOW_FORMAT.md) for the complete
 schema and [the architecture](docs/ARCHITECTURE.md) for execution semantics.
+
+## Inspect before execution
+
+Build a static plan without loading handlers, running actions, reading workflow input, or
+making a network request:
+
+```bash
+samsarix-orchestration plan workflow.json
+samsarix-orchestration plan workflow.json --format json
+samsarix-orchestration plan workflow.json --format mermaid > workflow.mmd
+```
+
+The plan preserves workflow order for its step inventory while deriving deterministic
+dependency waves, roots, leaves, dependants, the longest dependency chain, maximum wave
+width, retry-attempt ceilings, the canonical workflow digest, and approval-barrier
+locations. A wave marked as an
+approval barrier reflects the runtime's global rule: none of that dependency-ready group
+starts while a request remains pending. Mermaid output uses internal node IDs and omits
+approval prompts; it is source text only, so rendering remains an explicit caller choice.
+Python callers use `build_workflow_plan(definition)` and then `to_dict()`, `to_text()`, or
+`to_mermaid()`.
 
 `--events` writes one compact, privacy-minimized JSON event per line to stderr while the
 final run report remains on stdout. This makes CLI progress consumable without parsing

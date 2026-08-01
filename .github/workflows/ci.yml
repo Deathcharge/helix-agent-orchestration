@@ -49,7 +49,7 @@ jobs:
           python -m twine check dist/*
 
       - name: Verify wheel boundary
-        run: python -c "import pathlib,zipfile; p=next(pathlib.Path('dist').glob('*.whl')); n=zipfile.ZipFile(p).namelist(); assert 'samsarix_orchestration/checkpoints.py' in n; assert 'samsarix_orchestration/events.py' in n; assert 'samsarix_orchestration/runtime.py' in n; assert 'samsarix_orchestration/sqlite_store.py' in n; assert 'helix_orchestration/checkpoints.py' in n; assert 'helix_orchestration/events.py' in n; assert 'helix_orchestration/sqlite_store.py' in n; assert not any('/agents/' in x or '/coordination/' in x or '/plugins/' in x for x in n)"
+        run: python -c "import pathlib,zipfile; p=next(pathlib.Path('dist').glob('*.whl')); n=zipfile.ZipFile(p).namelist(); assert 'samsarix_orchestration/checkpoints.py' in n; assert 'samsarix_orchestration/events.py' in n; assert 'samsarix_orchestration/planning.py' in n; assert 'samsarix_orchestration/runtime.py' in n; assert 'samsarix_orchestration/sqlite_store.py' in n; assert 'helix_orchestration/checkpoints.py' in n; assert 'helix_orchestration/events.py' in n; assert 'helix_orchestration/planning.py' in n; assert 'helix_orchestration/sqlite_store.py' in n; assert not any('/agents/' in x or '/coordination/' in x or '/plugins/' in x for x in n)"
 
       - name: Install and smoke-test wheel
         run: |
@@ -59,6 +59,9 @@ jobs:
           helix-orchestration --version
           verify_dir="$(mktemp -d)"
           samsarix-orchestration init "$verify_dir/approval.json" --approval
+          samsarix-orchestration plan "$verify_dir/approval.json" --format json > "$verify_dir/plan.json"
+          python -c "import json,sys; p=json.load(open(sys.argv[1])); assert p['approval_steps'] == ['publish']; assert p['wave_count'] == 2; assert len(p['workflow_digest']) == 64" "$verify_dir/plan.json"
+          samsarix-orchestration plan "$verify_dir/approval.json" --format mermaid | grep -q "class n1 approval"
           set +e
           samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval > "$verify_dir/paused.json"
           paused_status=$?

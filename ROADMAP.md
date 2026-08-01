@@ -26,6 +26,8 @@ increments behind focused, green pull requests; publication remains a separate o
   fail-closed monotonic updates, privacy-safe inspection, and explicit retention deletion.
 - Completed: strict schema-v2 pre-action approval gates persist state-bound decisions,
   pause all ready work, and reject without invoking the gated handler.
+- Completed: deterministic offline workflow plans expose dependency waves, approval
+  barriers, machine-readable metadata, and Mermaid source without a hosted UI.
 
 ## Release candidate
 
