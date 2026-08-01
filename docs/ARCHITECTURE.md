@@ -14,6 +14,7 @@ samsarix_orchestration
 ├── checkpoints.py bounded in-memory and atomic JSON checkpoint stores
 ├── sqlite_store.py transactional same-host SQLite checkpoints and inspection
 ├── events.py     versioned privacy-minimized lifecycle event contract
+├── planning.py   deterministic dependency plans and offline Mermaid source
 ├── cli.py        local file/input/output boundary and exit codes
 └── __main__.py   python -m entry point
 ```
@@ -49,6 +50,9 @@ removed from the working tree and remain available in Git history.
 10. In workflow schema version 2, a ready step with an approval policy creates a durable
     request before the complete ready batch yields. Resume durably records approve or
     reject before any approved handler can start.
+11. `build_workflow_plan` derives dependency waves and visualization metadata solely from
+    the validated definition. It never resolves actions, reads run input, or contacts a
+    renderer; Mermaid output is deterministic source text with internal node identifiers.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
 the host application's explicit action registry and configuration.
@@ -136,3 +140,9 @@ Samsarix implements only the bounded embedded pre-action subset:
 - https://docs.langchain.com/oss/python/langgraph/interrupts
 - https://docs.prefect.io/v3/advanced/interactive
 - https://github.com/temporalio/sdk-python
+
+Offline planning follows the graph-inspection ergonomics documented by LangGraph and
+Prefect while retaining the zero-runtime-dependency boundary:
+
+- https://docs.langchain.com/oss/python/langgraph/use-graph-api#visualize-your-graph
+- https://docs.prefect.io/v3/api-ref/python/prefect-flows#prefect.flows.Flow.visualize

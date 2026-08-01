@@ -85,8 +85,8 @@ distributed durable execution or continuation from inside a running handler.
 
 ## Product and architecture decisions
 
-1. Reduce the public package to six root modules and exclude historical subpackages
-   from the wheel rather than pretending they are supported.
+1. Keep a small explicit public module set and exclude historical subpackages from the
+   wheel rather than pretending they are supported.
 2. Use a versioned JSON DAG with a 1 MiB document bound, 256-step limit, strict ids,
    complete validation issues, and explicit numeric bounds.
 3. Require host applications to register trusted callables. Workflow JSON cannot import
@@ -102,6 +102,9 @@ distributed durable execution or continuation from inside a running handler.
 8. Introduce approval gates only in strict workflow schema version 2. Bind each request to
    the run, workflow, input, gated step, and dependency outputs; persist a decision before
    starting its handler; and leave reviewer identity enforcement to the embedding system.
+9. Expose deterministic static plans as text, stable JSON, and offline Mermaid source.
+   Planning validates definitions but never imports handlers, reads run input, or chooses
+   a renderer.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
@@ -118,6 +121,10 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - Temporal's Python SDK exposes asynchronous signals and validated request/response
   updates; this informed the decision to keep approval requests addressable and to reject
   stale or divergent decisions: https://github.com/temporalio/sdk-python
+- LangGraph and Prefect expose graph visualization as a core debugging affordance.
+  Samsarix implements the zero-network source/metadata subset without a rendering
+  dependency: https://docs.langchain.com/oss/python/langgraph/use-graph-api#visualize-your-graph
+  and https://docs.prefect.io/v3/api-ref/python/prefect-flows#prefect.flows.Flow.visualize
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
   https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
@@ -149,6 +156,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add transactional same-host SQLite checkpoints and privacy-safe run operations.
 - [x] Add ordered structured progress callbacks and explicit cancellation events.
 - [x] Add durable, state-bound pre-action approval and rejection gates.
+- [x] Add offline dependency plans and Mermaid source for review and downstream UIs.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
 
@@ -167,12 +175,14 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Concurrent multi-run checkpoint persistence with corruption and lock-contention tests.
 - [x] Strict schema-v2 approval gates with durable decisions, a global ready-batch barrier,
   rejection propagation, event privacy, and concurrent-decision tests.
+- [x] Stable static plan schema with deterministic waves, graph metadata, and prompt-free
+  Mermaid export.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
 
 - A clean Python 3.11 environment can build and install the wheel.
-- `samsarix-orchestration --version`, `init`, `validate`, and `run` reproduce the
+- `samsarix-orchestration --version`, `init`, `validate`, `plan`, and `run` reproduce the
   documented journey.
 - Invalid documents, unknown actions, failed handlers, timeouts, retries, blocked
   dependants, approval/rejection decisions, existing output files, and cancellation have
@@ -198,6 +208,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - Added release CI, package smoke checks, and accurate user/developer documentation.
 - Added a generated approval workflow, CLI and Python decision APIs, durable SQLite/JSON
   approval state, privacy-safe inspection, and installed-wheel smoke coverage.
+- Added deterministic Python and CLI preflight plans with text, JSON, and Mermaid formats.
 - Adopted MPL-2.0 under Samsarix LLC ownership and added notice, migration, and trademark
   documentation.
 
@@ -254,21 +265,23 @@ release provenance, or third-party adoption gates.
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified
-locally on Python 3.14. The SQLite and approval-gate milestones were fully verified and
-packaged with Python 3.11; the repository CI matrix remains authoritative for Python 3.11
-through 3.13:
+locally on Python 3.14. The SQLite, approval-gate, and offline-planning milestones were
+fully verified and packaged with Python 3.11; the repository CI matrix remains
+authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 18 source files across the primary and compatibility packages;
-- `python -m pytest`: 119 passed, 88.52% branch-aware coverage;
+- `python -m mypy`: pass, 20 source files across the primary and compatibility packages;
+- `python -m pytest`: 123 passed, 89.23% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
   both `python -m` entry points, SQLite `run`, `runs list`, privacy-safe `runs show`, and
   the pause/approve/resume journey passed;
+- a third empty environment installed the wheel with `--no-deps` and produced verified
+  JSON and Mermaid plans through the installed console script and compatibility API;
 - eight separate PowerShell job processes committed distinct runs to one installed-wheel
   SQLite database without loss;
-- wheel boundary inspection: 28 archive entries, 10 primary package entries, 10 thin
+- wheel boundary inspection: 30 archive entries, 11 primary package entries, 11 thin
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 
@@ -286,7 +299,7 @@ the artifact is rebuilt, and the document itself is included in the source archi
 ## Release disposition
 
 **Branded local release candidate with named owner gates.** The core product journey,
-durable pre-action review gate, MPL-2.0 licensing, Samsarix ownership, compatibility
-boundary, and local engineering gates are implemented. Registry publication remains
-gated by package-name confirmation, release provenance, and an explicit owner publication
-decision.
+offline preflight planning, durable pre-action review gate, MPL-2.0 licensing, Samsarix
+ownership, compatibility boundary, and local engineering gates are implemented. Registry
+publication remains gated by package-name confirmation, release provenance, and an
+explicit owner publication decision.

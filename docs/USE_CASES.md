@@ -48,6 +48,14 @@ This is strongest when the reviewer can inspect a deterministic proposal and the
 destination honors `ActionContext.idempotency_key`. It is not suitable for approving an
 unknown mutation assembled only after the gated handler has already started.
 
+### CI and change-review preflight
+
+`samsarix-orchestration plan --format json` gives CI a stable inventory of actions,
+agents, dependency edges, retry ceilings, and approval-gated steps without importing or
+executing application handlers. Teams can compare this bounded plan in review or enforce
+their own policy around newly introduced actions and missing gates. Mermaid source offers
+the same graph for design documents without requiring a renderer in the package or CI.
+
 ## Validated external consumer
 
 [Samsarix Integration Examples](https://github.com/Deathcharge/samsarix-integration-examples)
