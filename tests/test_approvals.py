@@ -16,6 +16,7 @@ from samsarix_orchestration import (
     ApprovalDecisionKind,
     ApprovalPolicy,
     ApprovalStatus,
+    EventDeliveryError,
     InMemoryCheckpointStore,
     JsonDirectoryCheckpointStore,
     SqliteCheckpointStore,
@@ -76,6 +77,9 @@ async def test_approval_pause_and_resume_is_durable_and_bound() -> None:
         assert context.dependencies == {"prepare": {"value": 42}}
         assert context.approval is not None
         assert context.approval.status is ApprovalStatus.APPROVED
+        durable = store.load("approval-42")
+        assert durable is not None
+        assert durable.approvals[0].status is ApprovalStatus.APPROVED
         return "published"
 
     store = InMemoryCheckpointStore()
@@ -229,6 +233,62 @@ async def test_pending_gate_pauses_all_ready_work_before_side_effects() -> None:
     assert result.status == "paused"
     assert result.steps == ()
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_decision_survives_observer_failure_before_handler_dispatch() -> None:
+    calls = 0
+
+    def effect(_context: ActionContext) -> str:
+        nonlocal calls
+        calls += 1
+        return "done"
+
+    def observer(event: WorkflowEvent) -> None:
+        if event.kind is WorkflowEventKind.APPROVAL_RECORDED:
+            raise RuntimeError("observer unavailable")
+
+    workflow = WorkflowDefinition(
+        version=2,
+        name="observer-recovery",
+        steps=(
+            WorkflowStep(
+                id="effect",
+                action="effect",
+                approval=ApprovalPolicy(prompt="Run the effect?"),
+            ),
+        ),
+    )
+    store = InMemoryCheckpointStore()
+    runner = WorkflowRunner({"effect": effect}, event_handlers=(observer,))
+    paused = await runner.run(
+        workflow,
+        run_id="observer-recovery",
+        checkpoint_store=store,
+    )
+
+    with pytest.raises(EventDeliveryError, match="approval_recorded"):
+        await runner.run(
+            workflow,
+            run_id="observer-recovery",
+            checkpoint_store=store,
+            resume=True,
+            approval_decisions=(ApprovalDecision.approve(paused.approvals[0].request_id),),
+        )
+
+    assert calls == 0
+    checkpoint = store.load("observer-recovery")
+    assert checkpoint is not None
+    assert checkpoint.approvals[0].status is ApprovalStatus.APPROVED
+
+    completed = await WorkflowRunner({"effect": effect}).run(
+        workflow,
+        run_id="observer-recovery",
+        checkpoint_store=store,
+        resume=True,
+    )
+    assert completed.succeeded
+    assert calls == 1
 
 
 @pytest.mark.asyncio
