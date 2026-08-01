@@ -12,6 +12,7 @@ Initial honest standalone release candidate.
 - Stable action idempotency keys and a runnable side-effect recovery example.
 - Ordered schema-versioned lifecycle events, explicit observer failure semantics, and
   privacy-minimized CLI JSON Lines progress output.
+- Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.
 - MPL-2.0 licensing, ownership notice, trademark guidance, and rename migration guide.

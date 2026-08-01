@@ -11,7 +11,8 @@ an LLM provider, execute model-generated code, expose a server, or require priva
 infrastructure.
 
 Status: **0.1 alpha / local release candidate.** The implemented CLI and Python journey
-are tested. The distribution has not yet been published to a package index.
+are tested, including from an exact-pin external package consumer. The distribution has
+not yet been published to a package index.
 
 ## What works
 
@@ -23,6 +24,8 @@ are tested. The distribution has not yet been published to a package index.
 - Opt-in atomic JSON checkpoints that resume without repeating verified successful steps.
 - Stable per-step idempotency keys for safely designed external side effects.
 - Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
+- A separately installed consumer proving resume, idempotency, and event contracts across
+  a real package boundary.
 - JSON-safe inputs, outputs, errors, and terminal step states.
 - A provider-free CLI example using four deterministic built-in actions.
 - No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
@@ -183,7 +186,8 @@ external effect succeeds but before its checkpoint is written, so effectful hand
 pass the idempotency key to the target system or otherwise deduplicate it. The runnable
 [resumable order example](examples/resumable_order_pipeline.py) demonstrates that crash
 window without duplicating a receipt. See [real use cases](docs/USE_CASES.md) for fit and
-non-fit guidance.
+non-fit guidance and [external consumer evidence](docs/CONSUMER_EVIDENCE.md) for the
+independently installed redaction pipeline.
 
 ## Development
 
