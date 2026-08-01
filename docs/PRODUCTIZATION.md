@@ -214,18 +214,18 @@ claimed.
 ## Final verification
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
-environment. The durable-checkpoint milestone was then verified locally on Python
-3.14 and packaged with Python 3.11; the repository CI matrix remains authoritative
-for Python 3.11 through 3.13:
+environment. The durable-checkpoint and lifecycle-event milestones were then verified
+locally on Python 3.14 and packaged with Python 3.11; the repository CI matrix remains
+authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 14 source files across the primary and compatibility packages;
-- `python -m pytest`: 64 passed, 91.45% branch-aware coverage;
+- `python -m mypy`: pass, 16 source files across the primary and compatibility packages;
+- `python -m pytest`: 73 passed, 91.89% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
   both `python -m` entry points, `init`, `validate`, and `run` passed;
-- wheel boundary inspection: 24 archive entries, 8 primary package entries, 8 thin
+- wheel boundary inspection: 26 archive entries, 9 primary package entries, 9 thin
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 
@@ -233,7 +233,7 @@ Artifact inventory for the verified build:
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `samsarix_orchestration-0.1.0-py3-none-any.whl` | 31,838 | recorded in the external release attestation¹ |
+| `samsarix_orchestration-0.1.0-py3-none-any.whl` | built | recorded in the external release attestation¹ |
 | `samsarix_orchestration-0.1.0.tar.gz` | built | record in the external release attestation¹ |
 
 ¹ Reproducible verification records the final wheel and source-archive checksums outside
@@ -244,5 +244,5 @@ the artifact is rebuilt, and the document itself is included in the source archi
 
 **Branded local release candidate with named owner gates.** The core product journey,
 MPL-2.0 licensing, Samsarix ownership, compatibility boundary, and local engineering
-gates are implemented. Registry publication remains gated by package-name confirmation
-and observation of the first multi-version CI run.
+gates are implemented. Registry publication remains gated by package-name confirmation,
+release provenance, and an explicit owner publication decision.

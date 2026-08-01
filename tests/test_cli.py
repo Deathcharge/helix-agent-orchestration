@@ -179,3 +179,23 @@ def test_cli_checkpoint_resume_journey(
 
     assert main(["run", str(workflow), "--resume"]) == 2
     assert "--checkpoint-dir" in capsys.readouterr().err
+
+
+def test_cli_streams_privacy_minimized_json_events(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "workflow.json"
+    assert main(["init", str(workflow)]) == 0
+    capsys.readouterr()
+
+    assert main(["run", str(workflow), "--events", "--input", '{"secret":"hidden"}']) == 0
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    events = [json.loads(line) for line in captured.err.splitlines()]
+
+    assert report["status"] == "succeeded"
+    assert events[0]["kind"] == "run_started"
+    assert events[-1]["kind"] == "run_succeeded"
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    assert "hidden" not in captured.err

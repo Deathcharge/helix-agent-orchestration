@@ -13,12 +13,12 @@ import math
 import re
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, Protocol, TypeGuard
 
+from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
 from .spec import WorkflowDefinition, WorkflowStep
 
 MAX_RESULT_BYTES = 1_048_576
@@ -31,15 +31,8 @@ class WorkflowExecutionError(RuntimeError):
     """Raised before execution when the runtime cannot safely run a workflow."""
 
 
-class StepState(StrEnum):
-    """Stable lifecycle states for a workflow step."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    BLOCKED = "blocked"
-    CANCELLED = "cancelled"
+class EventDeliveryError(WorkflowExecutionError):
+    """Raised when an event handler cannot accept a lifecycle event."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +239,65 @@ class WorkflowRunResult:
         }
 
 
+class _EventDispatcher:
+    """Serialize event delivery for one run, including concurrent steps."""
+
+    def __init__(self, handlers: tuple[EventHandler, ...]) -> None:
+        self._handlers = handlers
+        self._sequence = 0
+        self._lock = asyncio.Lock()
+
+    async def emit(
+        self,
+        kind: WorkflowEventKind,
+        *,
+        run_id: str,
+        workflow: str,
+        step_id: str | None = None,
+        attempt: int | None = None,
+        state: StepState | None = None,
+        duration_ms: float | None = None,
+        error_type: str | None = None,
+        resumed: bool = False,
+    ) -> None:
+        if not self._handlers:
+            return
+        async with self._lock:
+            self._sequence += 1
+            event = WorkflowEvent(
+                sequence=self._sequence,
+                kind=kind,
+                run_id=run_id,
+                workflow=workflow,
+                occurred_at=_utc_now(),
+                step_id=step_id,
+                attempt=attempt,
+                state=state,
+                duration_ms=duration_ms,
+                error_type=error_type,
+                resumed=resumed,
+            )
+            for handler in self._handlers:
+                try:
+                    await self._invoke(handler, event)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    raise EventDeliveryError(
+                        f"Event handler failed while delivering {kind.value!r} "
+                        f"at sequence {event.sequence}."
+                    ) from exc
+
+    @staticmethod
+    async def _invoke(handler: EventHandler, event: WorkflowEvent) -> None:
+        if inspect.iscoroutinefunction(handler):
+            await handler(event)
+            return
+        result = await asyncio.to_thread(handler, event)
+        if inspect.isawaitable(result):
+            await result
+
+
 class WorkflowRunner:
     """Execute dependency-aware workflows using explicitly registered handlers."""
 
@@ -255,14 +307,18 @@ class WorkflowRunner:
         *,
         fail_fast: bool = True,
         max_result_bytes: int = MAX_RESULT_BYTES,
+        event_handlers: Iterable[EventHandler] | None = None,
     ) -> None:
         if max_result_bytes < 1:
             raise ValueError("max_result_bytes must be positive")
         self._actions: dict[str, ActionHandler] = {}
         self.fail_fast = fail_fast
         self.max_result_bytes = max_result_bytes
+        self._event_handlers: list[EventHandler] = []
         for name, handler in (actions or {}).items():
             self.register_action(name, handler)
+        for event_handler in event_handlers or ():
+            self.register_event_handler(event_handler)
 
     def register_action(self, name: str, handler: ActionHandler) -> None:
         """Register or replace a handler by an explicit action name."""
@@ -271,6 +327,12 @@ class WorkflowRunner:
         if not callable(handler):
             raise TypeError(f"Handler for {name!r} must be callable.")
         self._actions[name] = handler
+
+    def register_event_handler(self, handler: EventHandler) -> None:
+        """Register an ordered, backpressured lifecycle event handler."""
+        if not callable(handler):
+            raise TypeError("Event handler must be callable.")
+        self._event_handlers.append(handler)
 
     async def run(
         self,
@@ -307,6 +369,7 @@ class WorkflowRunner:
 
         started_at = _utc_now()
         started_clock = time.perf_counter()
+        dispatcher = _EventDispatcher(tuple(self._event_handlers))
         ordered_steps = {step.id: step for step in workflow.steps}
         pending = set(ordered_steps)
         results: dict[str, StepResult] = {}
@@ -339,118 +402,193 @@ class WorkflowRunner:
             )
         restored_steps = len(results)
         semaphore = asyncio.Semaphore(workflow.max_concurrency)
-
-        while pending:
-            blocked_ids = [
-                step_id
-                for step_id in pending
-                if any(
-                    dependency in results and results[dependency].state is not StepState.SUCCEEDED
-                    for dependency in ordered_steps[step_id].dependencies
-                )
-            ]
-            for step_id in blocked_ids:
-                step = ordered_steps[step_id]
-                results[step_id] = self._terminal_without_run(
-                    step,
-                    StepState.BLOCKED,
-                    "DependencyFailed",
-                    "One or more dependencies did not succeed.",
-                )
-                pending.remove(step_id)
-
-            ready = [
-                step
-                for step in workflow.steps
-                if step.id in pending
-                and all(
-                    dependency in results and results[dependency].state is StepState.SUCCEEDED
-                    for dependency in step.dependencies
-                )
-            ]
-            if not ready:
-                if pending:
-                    raise WorkflowExecutionError("Workflow stalled despite successful validation.")
-                break
-
-            tasks = [
-                asyncio.create_task(
-                    self._run_step(
-                        workflow.name,
-                        effective_run_id,
-                        step,
-                        workflow_input,
-                        {
-                            dependency: results[dependency].output
-                            for dependency in step.dependencies
-                        },
-                        semaphore,
-                    )
-                )
-                for step in ready
-            ]
-            try:
-                batch = await asyncio.gather(*tasks)
-            except asyncio.CancelledError:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-
-            failed = False
-            for result in batch:
-                results[result.step_id] = result
-                pending.remove(result.step_id)
-                failed = failed or result.state is StepState.FAILED
-
-            if checkpoint_store is not None:
-                await self._save_checkpoint(
-                    checkpoint_store,
-                    WorkflowCheckpoint(
-                        version=1,
-                        run_id=effective_run_id,
-                        workflow_digest=workflow_digest,
-                        input_digest=input_digest,
-                        saved_at=_utc_now(),
-                        steps=tuple(
-                            results[step.id]
-                            for step in workflow.steps
-                            if step.id in results
-                            and results[step.id].state is StepState.SUCCEEDED
-                        ),
-                    ),
-                )
-
-            if failed and self.fail_fast:
-                for step in workflow.steps:
-                    if step.id in pending:
-                        results[step.id] = self._terminal_without_run(
-                            step,
-                            StepState.BLOCKED,
-                            "FailFast",
-                            "Not started because an earlier step failed.",
-                        )
-                        pending.remove(step.id)
-                break
-
-        finished_at = _utc_now()
-        ordered_results = tuple(results[step.id] for step in workflow.steps)
-        status = (
-            "succeeded"
-            if all(result.state is StepState.SUCCEEDED for result in ordered_results)
-            else "failed"
-        )
-        return WorkflowRunResult(
+        await dispatcher.emit(
+            WorkflowEventKind.RUN_STARTED,
             run_id=effective_run_id,
             workflow=workflow.name,
-            status=status,
-            started_at=started_at,
-            finished_at=finished_at,
-            duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
-            steps=ordered_results,
             resumed=resume,
-            restored_steps=restored_steps,
         )
+        for step in workflow.steps:
+            if step.id in results:
+                restored = results[step.id]
+                await dispatcher.emit(
+                    WorkflowEventKind.STEP_RESTORED,
+                    run_id=effective_run_id,
+                    workflow=workflow.name,
+                    step_id=step.id,
+                    attempt=restored.attempts,
+                    state=StepState.SUCCEEDED,
+                    duration_ms=restored.duration_ms,
+                    resumed=True,
+                )
+
+        try:
+            while pending:
+                blocked_ids = [
+                    step.id
+                    for step in workflow.steps
+                    if step.id in pending
+                    if any(
+                        dependency in results
+                        and results[dependency].state is not StepState.SUCCEEDED
+                        for dependency in step.dependencies
+                    )
+                ]
+                for step_id in blocked_ids:
+                    step = ordered_steps[step_id]
+                    blocked = self._terminal_without_run(
+                        step,
+                        StepState.BLOCKED,
+                        "DependencyFailed",
+                        "One or more dependencies did not succeed.",
+                    )
+                    results[step_id] = blocked
+                    pending.remove(step_id)
+                    await dispatcher.emit(
+                        WorkflowEventKind.STEP_BLOCKED,
+                        run_id=effective_run_id,
+                        workflow=workflow.name,
+                        step_id=step.id,
+                        state=StepState.BLOCKED,
+                        duration_ms=0.0,
+                        error_type="DependencyFailed",
+                    )
+
+                ready = [
+                    step
+                    for step in workflow.steps
+                    if step.id in pending
+                    and all(
+                        dependency in results
+                        and results[dependency].state is StepState.SUCCEEDED
+                        for dependency in step.dependencies
+                    )
+                ]
+                if not ready:
+                    if pending:
+                        raise WorkflowExecutionError(
+                            "Workflow stalled despite successful validation."
+                        )
+                    break
+
+                tasks = [
+                    asyncio.create_task(
+                        self._run_step(
+                            workflow.name,
+                            effective_run_id,
+                            step,
+                            workflow_input,
+                            {
+                                dependency: results[dependency].output
+                                for dependency in step.dependencies
+                            },
+                            semaphore,
+                            dispatcher,
+                        )
+                    )
+                    for step in ready
+                ]
+                try:
+                    batch = await asyncio.gather(*tasks)
+                except BaseException:
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    raise
+
+                failed = False
+                for result in batch:
+                    results[result.step_id] = result
+                    pending.remove(result.step_id)
+                    failed = failed or result.state is StepState.FAILED
+
+                if checkpoint_store is not None:
+                    await self._save_checkpoint(
+                        checkpoint_store,
+                        WorkflowCheckpoint(
+                            version=1,
+                            run_id=effective_run_id,
+                            workflow_digest=workflow_digest,
+                            input_digest=input_digest,
+                            saved_at=_utc_now(),
+                            steps=tuple(
+                                results[step.id]
+                                for step in workflow.steps
+                                if step.id in results
+                                and results[step.id].state is StepState.SUCCEEDED
+                            ),
+                        ),
+                    )
+                    await dispatcher.emit(
+                        WorkflowEventKind.CHECKPOINT_SAVED,
+                        run_id=effective_run_id,
+                        workflow=workflow.name,
+                        resumed=resume,
+                    )
+
+                if failed and self.fail_fast:
+                    for step in workflow.steps:
+                        if step.id in pending:
+                            blocked = self._terminal_without_run(
+                                step,
+                                StepState.BLOCKED,
+                                "FailFast",
+                                "Not started because an earlier step failed.",
+                            )
+                            results[step.id] = blocked
+                            pending.remove(step.id)
+                            await dispatcher.emit(
+                                WorkflowEventKind.STEP_BLOCKED,
+                                run_id=effective_run_id,
+                                workflow=workflow.name,
+                                step_id=step.id,
+                                state=StepState.BLOCKED,
+                                duration_ms=0.0,
+                                error_type="FailFast",
+                            )
+                    break
+
+            finished_at = _utc_now()
+            ordered_results = tuple(results[step.id] for step in workflow.steps)
+            status = (
+                "succeeded"
+                if all(result.state is StepState.SUCCEEDED for result in ordered_results)
+                else "failed"
+            )
+            duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)
+            run_result = WorkflowRunResult(
+                run_id=effective_run_id,
+                workflow=workflow.name,
+                status=status,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms,
+                steps=ordered_results,
+                resumed=resume,
+                restored_steps=restored_steps,
+            )
+            await dispatcher.emit(
+                WorkflowEventKind.RUN_SUCCEEDED
+                if run_result.succeeded
+                else WorkflowEventKind.RUN_FAILED,
+                run_id=effective_run_id,
+                workflow=workflow.name,
+                duration_ms=duration_ms,
+                resumed=resume,
+            )
+            return run_result
+        except asyncio.CancelledError:
+            try:
+                await dispatcher.emit(
+                    WorkflowEventKind.RUN_CANCELLED,
+                    run_id=effective_run_id,
+                    workflow=workflow.name,
+                    duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
+                    resumed=resume,
+                )
+            except EventDeliveryError:
+                pass
+            raise
 
     async def _load_checkpoint(
         self,
@@ -528,6 +666,7 @@ class WorkflowRunner:
         workflow_input: Any,
         dependencies: Mapping[str, Any],
         semaphore: asyncio.Semaphore,
+        dispatcher: _EventDispatcher,
     ) -> StepResult:
         async with semaphore:
             started_at = _utc_now()
@@ -539,6 +678,14 @@ class WorkflowRunner:
             handler_is_async = inspect.iscoroutinefunction(handler)
             for attempt in range(1, attempts + 1):
                 attempts_used = attempt
+                await dispatcher.emit(
+                    WorkflowEventKind.STEP_ATTEMPT_STARTED,
+                    run_id=run_id,
+                    workflow=workflow_name,
+                    step_id=step.id,
+                    attempt=attempt,
+                    state=StepState.RUNNING,
+                )
                 context = ActionContext(
                     workflow_name=workflow_name,
                     step=step,
@@ -554,7 +701,7 @@ class WorkflowRunner:
                         timeout=step.timeout_seconds,
                     )
                     self._require_json_value(output, label=f"output from step {step.id}")
-                    return StepResult(
+                    result = StepResult(
                         step_id=step.id,
                         agent=step.agent,
                         action=step.action,
@@ -565,7 +712,34 @@ class WorkflowRunner:
                         duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
                         output=output,
                     )
+                    await dispatcher.emit(
+                        WorkflowEventKind.STEP_SUCCEEDED,
+                        run_id=run_id,
+                        workflow=workflow_name,
+                        step_id=step.id,
+                        attempt=attempt,
+                        state=StepState.SUCCEEDED,
+                        duration_ms=result.duration_ms,
+                    )
+                    return result
                 except asyncio.CancelledError:
+                    try:
+                        await dispatcher.emit(
+                            WorkflowEventKind.STEP_CANCELLED,
+                            run_id=run_id,
+                            workflow=workflow_name,
+                            step_id=step.id,
+                            attempt=attempt,
+                            state=StepState.CANCELLED,
+                            duration_ms=round(
+                                (time.perf_counter() - started_clock) * 1_000,
+                                3,
+                            ),
+                        )
+                    except EventDeliveryError:
+                        pass
+                    raise
+                except EventDeliveryError:
                     raise
                 except TimeoutError:
                     last_error = TimeoutError(
@@ -579,12 +753,22 @@ class WorkflowRunner:
                         break
                 except Exception as exc:
                     last_error = exc
-                if attempt < attempts and step.retry_delay_seconds:
-                    await asyncio.sleep(step.retry_delay_seconds)
+                if attempt < attempts:
+                    await dispatcher.emit(
+                        WorkflowEventKind.STEP_RETRY_SCHEDULED,
+                        run_id=run_id,
+                        workflow=workflow_name,
+                        step_id=step.id,
+                        attempt=attempt,
+                        state=StepState.RUNNING,
+                        error_type=type(last_error).__name__,
+                    )
+                    if step.retry_delay_seconds:
+                        await asyncio.sleep(step.retry_delay_seconds)
 
             if last_error is None:
                 raise RuntimeError("Step exhausted its attempts without an error.")
-            return StepResult(
+            result = StepResult(
                 step_id=step.id,
                 agent=step.agent,
                 action=step.action,
@@ -598,6 +782,17 @@ class WorkflowRunner:
                     "message": str(last_error)[:1_000],
                 },
             )
+            await dispatcher.emit(
+                WorkflowEventKind.STEP_FAILED,
+                run_id=run_id,
+                workflow=workflow_name,
+                step_id=step.id,
+                attempt=attempts_used,
+                state=StepState.FAILED,
+                duration_ms=result.duration_ms,
+                error_type=type(last_error).__name__,
+            )
+            return result
 
     async def _invoke(self, handler: ActionHandler, context: ActionContext) -> Any:
         if inspect.iscoroutinefunction(handler):

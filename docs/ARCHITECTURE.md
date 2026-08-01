@@ -12,6 +12,7 @@ samsarix_orchestration
 ├── runtime.py    bounded dependency-aware execution
 ├── actions.py    deterministic CLI demonstration actions
 ├── checkpoints.py bounded in-memory and atomic JSON checkpoint stores
+├── events.py     versioned privacy-minimized lifecycle event contract
 ├── cli.py        local file/input/output boundary and exit codes
 └── __main__.py   python -m entry point
 ```
@@ -42,6 +43,8 @@ removed from the working tree and remain available in Git history.
 8. When a checkpoint store is explicit, successful batch results are atomically persisted
    with canonical workflow and input digests. Resume restores only matching successful
    steps and recomputes the remaining graph.
+9. Explicit event handlers receive serialized lifecycle transitions in per-run sequence
+   order. Delivery is backpressured; no background telemetry task survives the run.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
 the host application's explicit action registry and configuration.
@@ -60,6 +63,9 @@ the host application's explicit action registry and configuration.
   replacement.
 - No network, telemetry, credential, database, or provider boundary exists in the
   supported package. Applications that add one own its policy and operational controls.
+- Lifecycle events omit inputs, parameters, outputs, dependency values, error messages,
+  and idempotency keys. They retain run/workflow/step identifiers and exception type names,
+  which applications must classify and protect as operational data.
 
 ## Reliability properties and limits
 
@@ -77,6 +83,12 @@ the host application's explicit action registry and configuration.
   can repeat the handler; the stable `run-id:step-id` idempotency key lets the destination
   deduplicate that effect.
 - Timestamps and durations are observations, not a durable audit log.
+- Event handlers are trusted application code. Sync handlers run in a worker thread; sync
+  and async handlers are invoked one at a time and awaited before execution advances.
+  Handler failure raises `EventDeliveryError`. Delivery is in-process and not durable;
+  handlers can partially accept an event before a later handler fails.
+- Ordering is per invocation. Concurrent runs have independent dispatchers, so shared sync
+  handlers must provide their own cross-run thread safety.
 
 ## Why this scope
 

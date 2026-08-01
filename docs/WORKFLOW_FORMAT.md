@@ -94,3 +94,31 @@ Run reports add two fields:
 
 The JSON directory store bounds each file to 16 MiB by default and uses a SHA-256 hash of
 the run id as its filename. The run id remains inside the auditable JSON document.
+
+## Lifecycle event contract
+
+`WorkflowRunner(..., event_handlers=(...))` emits schema version 1 events. Each run starts
+its sequence at 1, and every handler observes events in ascending sequence order. The CLI
+exposes the same JSON representation as JSON Lines on stderr with `run --events`.
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | Event schema version; currently `1`. |
+| `sequence` | Monotonic per-invocation delivery order. |
+| `kind` | Run, step-attempt, retry, restore, checkpoint, or terminal transition. |
+| `run_id`, `workflow` | Logical run and workflow identifiers. |
+| `occurred_at` | UTC observation timestamp. |
+| `step_id`, `attempt`, `state` | Step context when applicable, otherwise `null`. |
+| `duration_ms` | Observed terminal duration when applicable. |
+| `error_type` | Exception or blocking-policy type without the error message. |
+| `resumed` | Whether the event describes a resumed invocation or restored step. |
+
+The version 1 kinds are `run_started`, `step_restored`, `step_attempt_started`,
+`step_retry_scheduled`, `step_succeeded`, `step_failed`, `step_blocked`,
+`step_cancelled`, `checkpoint_saved`, `run_succeeded`, `run_failed`, and
+`run_cancelled`.
+
+Events never contain workflow input, step parameters, output or dependency values, error
+messages, or idempotency keys. Identifiers and error type names remain visible. Delivery
+is in-process, ordered, and backpressured rather than a durable log. A handler exception
+raises `EventDeliveryError`; already completed external effects are not rolled back.

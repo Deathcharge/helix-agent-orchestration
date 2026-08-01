@@ -19,7 +19,8 @@ adapters; Samsarix owns graph, retry, bounds, identity, and recovery semantics.
 An application can model fetch, normalize, validate, write, and notify as explicit steps.
 Stable idempotency keys let APIs or databases deduplicate writes when a response is lost.
 Machine-readable reports provide evidence for support tooling without requiring a hosted
-control plane.
+control plane. Ordered lifecycle events can feed application-owned logs, counters, or a
+desktop progress view without including record payloads.
 
 ### Local automation with expensive intermediate artifacts
 
@@ -64,7 +65,7 @@ provider, database, account, or runtime dependency.
 
 ## Next evidence-driven milestones
 
-1. Structured lifecycle events and progress callbacks for application-owned observability.
+1. Validate lifecycle events in a separate package consumer and desktop progress view.
 2. A versioned approval/interrupt primitive built on the checkpoint contract.
 3. A SQLite store with transactional single-host concurrency and run inspection.
 4. A published package, signed provenance, compatibility fixtures, and one external

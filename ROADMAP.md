@@ -15,10 +15,12 @@ increments behind focused, green pull requests; publication remains a separate o
 - Keep Samsarix LLC branding, package identity, license metadata, and compatibility aliases internally consistent.
 - Preserve the pre-productization default under a rollback ref before merging; do not delete legacy history.
 - Completed: a timed-out synchronous handler is not retried concurrently.
-- In progress: bounded local checkpoints restore only digest-matched successful steps and
+- Completed: bounded local checkpoints restore only digest-matched successful steps and
   expose stable idempotency keys for effectful handlers.
+- Completed: schema-versioned lifecycle events expose ordered, privacy-minimized
+  progress to application-owned observers and the CLI.
 - MPL-2.0 licensing and Samsarix LLC ownership are authorized and merged.
-- Next: add lifecycle events, then validate checkpointing with a real package consumer.
+- In progress: validate checkpoints and lifecycle events with a real package consumer.
 
 ## Release candidate
 
@@ -32,7 +34,7 @@ Current hardening backlog:
   compensation, human pauses, distributed workers, and cross-host coordination remain.
 - No release/tag/package-index verification or external user evidence.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
-  lifecycle visibility and a real external consumer are needed to validate that wedge.
+  a real external consumer is needed to validate that wedge.
 
 ## Samsarix adoption
 
