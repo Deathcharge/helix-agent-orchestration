@@ -9,6 +9,8 @@ Initial honest standalone release candidate.
 ### Added
 
 - Opt-in checkpoint stores, exact workflow/input identity validation, and resumable runs.
+- Transactional same-host SQLite checkpoints with bounded WAL concurrency, monotonic
+  same-run updates, privacy-safe run inspection, and confirmation-gated deletion.
 - Stable action idempotency keys and a runnable side-effect recovery example.
 - Ordered schema-versioned lifecycle events, explicit observer failure semantics, and
   privacy-minimized CLI JSON Lines progress output.

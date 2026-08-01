@@ -1,6 +1,6 @@
 # Productization record
 
-Last updated: 2026-07-28
+Last updated: 2026-08-01
 
 ## Repository assessment
 
@@ -135,7 +135,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 
 - [x] Remove excluded historical source subpackages while preserving them in Git history.
 - [x] Add bounded opt-in checkpoints with exact identity and stable idempotency keys.
-- Add structured progress callbacks and explicit per-step cancellation reporting.
+- [x] Add transactional same-host SQLite checkpoints and privacy-safe run operations.
+- [x] Add ordered structured progress callbacks and explicit cancellation events.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
 
@@ -151,6 +152,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Ruff and strict MyPy quality gates.
 - [x] CI and wheel-install smoke verification.
 - [x] Accurate README, architecture, workflow format, and this living record.
+- [x] Concurrent multi-run checkpoint persistence with corruption and lock-contention tests.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
@@ -190,9 +192,9 @@ supported product boundary was established. It remains recoverable from commit
 supported Samsarix feature.
 
 Distributed durable execution remains deferred. The local checkpoint contract now covers
-identity, atomic file replacement, output compatibility, resume rules, and idempotency
-keys. Cross-host coordination, retention automation, and exactly-once effects are not
-claimed.
+identity, atomic file replacement, transactional same-host SQLite writes, output
+compatibility, resume rules, safe inspection, explicit deletion, and idempotency keys.
+Cross-host coordination, retention automation, and exactly-once effects are not claimed.
 
 ## External package consumer
 
@@ -228,17 +230,20 @@ release provenance, or third-party adoption gates.
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified
-locally on Python 3.14 and packaged with Python 3.11; the repository CI matrix remains
-authoritative for Python 3.11 through 3.13:
+locally on Python 3.14. The SQLite milestone was fully verified and packaged with Python
+3.11; the repository CI matrix remains authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 16 source files across the primary and compatibility packages;
-- `python -m pytest`: 73 passed, 91.89% branch-aware coverage;
+- `python -m mypy`: pass, 18 source files across the primary and compatibility packages;
+- `python -m pytest`: 95 passed, 89.00% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
-  both `python -m` entry points, `init`, `validate`, and `run` passed;
-- wheel boundary inspection: 26 archive entries, 9 primary package entries, 9 thin
+  both `python -m` entry points, SQLite `run`, `runs list`, and privacy-safe `runs show`
+  passed;
+- eight separate PowerShell job processes committed distinct runs to one installed-wheel
+  SQLite database without loss;
+- wheel boundary inspection: 28 archive entries, 10 primary package entries, 10 thin
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 

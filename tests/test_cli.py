@@ -181,6 +181,119 @@ def test_cli_checkpoint_resume_journey(
     assert "--checkpoint-dir" in capsys.readouterr().err
 
 
+def test_cli_sqlite_run_inspection_resume_and_delete(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "workflow.json"
+    database = tmp_path / "runs.db"
+    assert main(["init", str(workflow)]) == 0
+    capsys.readouterr()
+
+    common = [
+        "run",
+        str(workflow),
+        "--checkpoint-db",
+        str(database),
+        "--run-id",
+        "sqlite-run",
+        "--input",
+        '{"secret":"PRIVATE"}',
+    ]
+    assert main(common) == 0
+    capsys.readouterr()
+
+    assert main(["runs", "list", str(database), "--json"]) == 0
+    summaries = json.loads(capsys.readouterr().out)
+    assert summaries[0]["run_id"] == "sqlite-run"
+    assert "PRIVATE" not in json.dumps(summaries)
+
+    assert main(["runs", "show", str(database), "sqlite-run"]) == 0
+    safe = json.loads(capsys.readouterr().out)
+    assert safe["successful_steps"] == 3
+    assert all("output" not in step for step in safe["steps"])
+
+    assert (
+        main(
+            [
+                "runs",
+                "show",
+                str(database),
+                "sqlite-run",
+                "--include-outputs",
+            ]
+        )
+        == 0
+    )
+    complete = json.loads(capsys.readouterr().out)
+    assert "output" in complete["steps"][0]
+
+    assert main([*common, "--resume"]) == 0
+    assert json.loads(capsys.readouterr().out)["restored_steps"] == 3
+
+    assert (
+        main(
+            [
+                "runs",
+                "delete",
+                str(database),
+                "sqlite-run",
+                "--confirm",
+                "wrong",
+            ]
+        )
+        == 2
+    )
+    assert "exactly match" in capsys.readouterr().err
+    assert (
+        main(
+            [
+                "runs",
+                "delete",
+                str(database),
+                "sqlite-run",
+                "--confirm",
+                "sqlite-run",
+            ]
+        )
+        == 0
+    )
+    assert "Deleted" in capsys.readouterr().out
+
+
+def test_cli_sqlite_errors_and_storage_exclusion(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "workflow.json"
+    assert main(["init", str(workflow)]) == 0
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as mutually_exclusive:
+        main(
+            [
+                "run",
+                str(workflow),
+                "--checkpoint-dir",
+                str(tmp_path / "dir"),
+                "--checkpoint-db",
+                str(tmp_path / "db"),
+            ]
+        )
+    assert mutually_exclusive.value.code == 2
+    capsys.readouterr()
+
+    assert main(["runs", "list", str(tmp_path / "missing.db")]) == 1
+    assert "does not exist" in capsys.readouterr().err
+
+    assert main(["runs", "list", ":memory:"]) == 2
+    assert "filesystem path" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as invalid_run_id:
+        main(["runs", "show", str(tmp_path / "missing.db"), "../escape"])
+    assert invalid_run_id.value.code == 2
+
+
 def test_cli_streams_privacy_minimized_json_events(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

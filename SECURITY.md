@@ -15,10 +15,16 @@ privacy, and cost limits at that boundary.
 
 Checkpointing is opt-in and persists successful step outputs as plaintext JSON. The
 bundled directory store hashes run identifiers for filenames, bounds reads and writes,
-validates workflow/input identities, and replaces files atomically. Applications remain
-responsible for directory access controls, encryption, retention, deletion, backups, and
-ensuring only one writer owns a run. Checkpoints are integrity-checked for compatibility,
-not cryptographically authenticated against a malicious local writer.
+validates workflow/input identities, and replaces files atomically. The SQLite store
+rejects symbolic-link database paths and unowned or modified schemas, bounds reads and lock
+waits, and transactionally rejects same-run regression or divergent successful results.
+It supports concurrent processes only on one host and must not use a network filesystem.
+
+Applications remain responsible for filesystem access controls, at-rest encryption,
+retention, deletion, backups, free-space monitoring, and coordinating one active executor
+per logical run. SQLite creates `-wal` and `-shm` sidecars during use; protect and retain
+them consistently with the database. Neither store cryptographically authenticates data
+against a malicious local writer.
 
 Lifecycle observation is opt-in. Version 1 events exclude workflow inputs, parameters,
 outputs, dependency values, error messages, and idempotency keys. They do include run,
