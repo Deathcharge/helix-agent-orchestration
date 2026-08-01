@@ -20,21 +20,23 @@ increments behind focused, green pull requests; publication remains a separate o
 - Completed: schema-versioned lifecycle events expose ordered, privacy-minimized
   progress to application-owned observers and the CLI.
 - MPL-2.0 licensing and Samsarix LLC ownership are authorized and merged.
-- In progress: validate checkpoints and lifecycle events with a real package consumer.
+- Completed: an exact-pin external consumer validates checkpoints, lifecycle events,
+  idempotent publishing, payload privacy, and measurable avoided redaction work.
 
 ## Release candidate
 
 - Build and install the wheel in a clean environment.
-- Prove one real consumer and a versioned compatibility fixture.
+- Prove one real consumer and a versioned compatibility fixture. Completed by
+  `samsarix-integration-examples` merge `41ea9221f88c66d469c022075c9c9c49400a7961`.
 - Publish only after package-name ownership, licensing, provenance, and rollback are recorded.
 
 Current hardening backlog:
 
 - Local step checkpointing and idempotency keys are implemented; process isolation,
   compensation, human pauses, distributed workers, and cross-host coordination remain.
-- No release/tag/package-index verification or external user evidence.
+- No release/tag/package-index verification or third-party user evidence.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
-  a real external consumer is needed to validate that wedge.
+  a separate installed consumer now validates that wedge across a package boundary.
 
 ## Samsarix adoption
 

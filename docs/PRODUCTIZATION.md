@@ -194,6 +194,19 @@ identity, atomic file replacement, output compatibility, resume rules, and idemp
 keys. Cross-host coordination, retention automation, and exactly-once effects are not
 claimed.
 
+## External package consumer
+
+The separately installable `samsarix-integration-examples` distribution pins this package
+at merged commit `0dfc050cf9a4582c9fa8d34d74b1ca97d43c9005`. Consumer merge
+`41ea9221f88c66d469c022075c9c9c49400a7961` proves a bounded redaction/publish workflow,
+one restored step, one redaction call across failure and resume, byte-identical idempotent
+publishing, payload-free lifecycle events, and source-identity rejection. Its Python
+3.11–3.13 CI and clean-wheel installation are recorded in
+[the consumer evidence](CONSUMER_EVIDENCE.md).
+
+This closes the internal cross-package compatibility gate. It does not close publication,
+release provenance, or third-party adoption gates.
+
 ## External and owner-controlled blockers
 
 - Publication: choose and authorize a package registry and confirm name ownership.

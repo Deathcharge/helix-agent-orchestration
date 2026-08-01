@@ -32,6 +32,17 @@ The runnable [order pipeline](../examples/resumable_order_pipeline.py) demonstra
 write that succeeds before its response is lost. Resume uses the same idempotency key,
 does not repeat completed pricing, and does not create a second receipt.
 
+## Validated external consumer
+
+[Samsarix Integration Examples](https://github.com/Deathcharge/samsarix-integration-examples)
+installs exact merged Orchestration and Integration Guard distributions. Its redaction
+pipeline deliberately loses the publish response, then resumes with one restored step,
+one total redaction call, unchanged output bytes, and `deduplicated: true`. Seeded raw
+values are asserted absent from checkpoints, lifecycle events, reports, and output.
+
+This is cross-package compatibility evidence, not a third-party production-adoption
+claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
+
 ## Contract boundaries
 
 - Delivery is at-least-once around external effects. Targets must support idempotency or
@@ -65,11 +76,10 @@ provider, database, account, or runtime dependency.
 
 ## Next evidence-driven milestones
 
-1. Validate lifecycle events in a separate package consumer and desktop progress view.
+1. Validate lifecycle events in a desktop progress view.
 2. A versioned approval/interrupt primitive built on the checkpoint contract.
 3. A SQLite store with transactional single-host concurrency and run inspection.
-4. A published package, signed provenance, compatibility fixtures, and one external
-   consumer that demonstrates measurable avoided work after resume.
+4. A published package with signed provenance and a third-party adoption signal.
 
 Research reviewed 2026-08-01. Product claims in the README remain limited to behavior
 verified in this repository.
