@@ -30,6 +30,26 @@ _STRICT_STEP_FIELDS = {
 }
 
 
+def _valid_timeout(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and 0 < value <= 3_600
+    )
+
+
+def _valid_retries(value: Any) -> bool:
+    return type(value) is int and 0 <= value <= 10
+
+
+def _valid_retry_delay(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and 0 <= value <= 300
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ValidationIssue:
     """One actionable workflow validation problem."""
@@ -346,12 +366,7 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
                 )
 
         timeout = step.get("timeout_seconds", 30.0)
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or timeout <= 0
-            or timeout > 3_600
-        ):
+        if not _valid_timeout(timeout):
             add(
                 "timeout",
                 f"{path}.timeout_seconds",
@@ -359,16 +374,11 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
             )
 
         retries = step.get("retries", 0)
-        if type(retries) is not int or retries < 0 or retries > 10:
+        if not _valid_retries(retries):
             add("retries", f"{path}.retries", "retries must be an integer from 0 to 10.")
 
         retry_delay = step.get("retry_delay_seconds", 0.0)
-        if (
-            isinstance(retry_delay, bool)
-            or not isinstance(retry_delay, (int, float))
-            or retry_delay < 0
-            or retry_delay > 300
-        ):
+        if not _valid_retry_delay(retry_delay):
             add(
                 "retry_delay",
                 f"{path}.retry_delay_seconds",
@@ -446,35 +456,21 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
                         "Compensation action must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.",
                     )
                 compensation_timeout = compensation.get("timeout_seconds", 30.0)
-                if (
-                    isinstance(compensation_timeout, bool)
-                    or not isinstance(compensation_timeout, (int, float))
-                    or compensation_timeout <= 0
-                    or compensation_timeout > 3_600
-                ):
+                if not _valid_timeout(compensation_timeout):
                     add(
                         "compensation_timeout",
                         f"{path}.compensation.timeout_seconds",
                         "Compensation timeout_seconds must be greater than 0 and at most 3,600.",
                     )
                 compensation_retries = compensation.get("retries", 0)
-                if (
-                    type(compensation_retries) is not int
-                    or compensation_retries < 0
-                    or compensation_retries > 10
-                ):
+                if not _valid_retries(compensation_retries):
                     add(
                         "compensation_retries",
                         f"{path}.compensation.retries",
                         "Compensation retries must be an integer from 0 to 10.",
                     )
                 compensation_delay = compensation.get("retry_delay_seconds", 0.0)
-                if (
-                    isinstance(compensation_delay, bool)
-                    or not isinstance(compensation_delay, (int, float))
-                    or compensation_delay < 0
-                    or compensation_delay > 300
-                ):
+                if not _valid_retry_delay(compensation_delay):
                     add(
                         "compensation_retry_delay",
                         f"{path}.compensation.retry_delay_seconds",

@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Protocol, TypeGuard
+from typing import Any, Protocol, TypeGuard, TypeVar
 
 from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
 from .spec import (
@@ -271,6 +271,9 @@ class CompensationContext:
     attempt: int
     run_id: str
     idempotency_key: str
+
+
+HandlerContextT = TypeVar("HandlerContextT", ActionContext, CompensationContext)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1221,23 +1224,17 @@ class WorkflowRunner:
                     raise WorkflowExecutionError("Compensating actions require a checkpoint store.")
                 if phase is CheckpointPhase.FORWARD:
                     phase = CheckpointPhase.COMPENSATING
-                    await self._save_checkpoint(
-                        checkpoint_store,
-                        self._build_checkpoint(
-                            workflow,
-                            effective_run_id,
-                            workflow_digest,
-                            input_digest,
-                            results,
-                            approvals,
-                            phase=phase,
-                            compensations=compensation_results,
-                        ),
-                    )
-                    await dispatcher.emit(
-                        WorkflowEventKind.CHECKPOINT_SAVED,
+                    await self._persist_phase(
+                        store=checkpoint_store,
+                        workflow=workflow,
                         run_id=effective_run_id,
-                        workflow=workflow.name,
+                        workflow_digest=workflow_digest,
+                        input_digest=input_digest,
+                        results=results,
+                        approvals=approvals,
+                        phase=phase,
+                        compensations=compensation_results,
+                        dispatcher=dispatcher,
                         resumed=resume,
                     )
                 if phase is CheckpointPhase.COMPENSATING:
@@ -1258,23 +1255,17 @@ class WorkflowRunner:
                     if all(step.id in compensation_results for step in eligible_compensations):
                         phase = CheckpointPhase.COMPLETE
                         compensation_status = "succeeded"
-                        await self._save_checkpoint(
-                            checkpoint_store,
-                            self._build_checkpoint(
-                                workflow,
-                                effective_run_id,
-                                workflow_digest,
-                                input_digest,
-                                results,
-                                approvals,
-                                phase=phase,
-                                compensations=compensation_results,
-                            ),
-                        )
-                        await dispatcher.emit(
-                            WorkflowEventKind.CHECKPOINT_SAVED,
+                        await self._persist_phase(
+                            store=checkpoint_store,
+                            workflow=workflow,
                             run_id=effective_run_id,
-                            workflow=workflow.name,
+                            workflow_digest=workflow_digest,
+                            input_digest=input_digest,
+                            results=results,
+                            approvals=approvals,
+                            phase=phase,
+                            compensations=compensation_results,
+                            dispatcher=dispatcher,
                             resumed=resume,
                         )
                     else:
@@ -1287,23 +1278,17 @@ class WorkflowRunner:
                 and checkpoint_store is not None
             ):
                 phase = CheckpointPhase.COMPLETE
-                await self._save_checkpoint(
-                    checkpoint_store,
-                    self._build_checkpoint(
-                        workflow,
-                        effective_run_id,
-                        workflow_digest,
-                        input_digest,
-                        results,
-                        approvals,
-                        phase=phase,
-                        compensations=compensation_results,
-                    ),
-                )
-                await dispatcher.emit(
-                    WorkflowEventKind.CHECKPOINT_SAVED,
+                await self._persist_phase(
+                    store=checkpoint_store,
+                    workflow=workflow,
                     run_id=effective_run_id,
-                    workflow=workflow.name,
+                    workflow_digest=workflow_digest,
+                    input_digest=input_digest,
+                    results=results,
+                    approvals=approvals,
+                    phase=phase,
+                    compensations=compensation_results,
+                    dispatcher=dispatcher,
                     resumed=resume,
                 )
             duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)
@@ -1379,6 +1364,42 @@ class WorkflowRunner:
                 f"Cannot save checkpoint for run_id {checkpoint.run_id!r}: {exc}"
             ) from exc
 
+    async def _persist_phase(
+        self,
+        *,
+        store: CheckpointStore,
+        workflow: WorkflowDefinition,
+        run_id: str,
+        workflow_digest: str,
+        input_digest: str,
+        results: Mapping[str, StepResult],
+        approvals: Mapping[str, ApprovalRecord],
+        phase: CheckpointPhase,
+        compensations: Mapping[str, StepResult],
+        dispatcher: _EventDispatcher,
+        resumed: bool,
+    ) -> None:
+        """Persist one Saga phase transition and emit its lifecycle event."""
+        await self._save_checkpoint(
+            store,
+            self._build_checkpoint(
+                workflow,
+                run_id,
+                workflow_digest,
+                input_digest,
+                results,
+                approvals,
+                phase=phase,
+                compensations=compensations,
+            ),
+        )
+        await dispatcher.emit(
+            WorkflowEventKind.CHECKPOINT_SAVED,
+            run_id=run_id,
+            workflow=workflow.name,
+            resumed=resumed,
+        )
+
     def _restore_checkpoint(
         self,
         checkpoint: WorkflowCheckpoint,
@@ -1442,6 +1463,10 @@ class WorkflowRunner:
                 raise WorkflowExecutionError(
                     f"Checkpoint compensation lacks forward result {result.step_id!r}."
                 )
+            self._require_json_value(
+                result.output,
+                label=f"checkpoint compensation output from {result.step_id}",
+            )
             compensations[result.step_id] = result
         for record in checkpoint.approvals:
             step = ordered_steps.get(record.step_id)
@@ -1524,7 +1549,10 @@ class WorkflowRunner:
                 results[step.id]
                 for step in workflow.steps
                 if step.id in results
-                and (workflow.version >= 3 or results[step.id].state is StepState.SUCCEEDED)
+                and (
+                    results[step.id].state is StepState.SUCCEEDED
+                    or phase is not CheckpointPhase.FORWARD
+                )
             ),
             approvals=_ordered_approvals(workflow, approvals),
             phase=phase,
@@ -1643,23 +1671,17 @@ class WorkflowRunner:
                     successful[result.step_id] = result
                 else:
                     failed = True
-            await self._save_checkpoint(
-                checkpoint_store,
-                self._build_checkpoint(
-                    workflow,
-                    run_id,
-                    workflow_digest,
-                    input_digest,
-                    results,
-                    approvals,
-                    phase=CheckpointPhase.COMPENSATING,
-                    compensations=successful,
-                ),
-            )
-            await dispatcher.emit(
-                WorkflowEventKind.CHECKPOINT_SAVED,
+            await self._persist_phase(
+                store=checkpoint_store,
+                workflow=workflow,
                 run_id=run_id,
-                workflow=workflow.name,
+                workflow_digest=workflow_digest,
+                input_digest=input_digest,
+                results=results,
+                approvals=approvals,
+                phase=CheckpointPhase.COMPENSATING,
+                compensations=successful,
+                dispatcher=dispatcher,
                 resumed=resumed,
             )
             if failed:
@@ -1710,7 +1732,7 @@ class WorkflowRunner:
                 )
                 try:
                     compensation_output = await asyncio.wait_for(
-                        self._invoke_compensation(handler, context),
+                        self._invoke(handler, context),
                         timeout=policy.timeout_seconds,
                     )
                     self._require_json_value(
@@ -1944,18 +1966,10 @@ class WorkflowRunner:
             )
             return result
 
-    async def _invoke(self, handler: ActionHandler, context: ActionContext) -> Any:
-        if inspect.iscoroutinefunction(handler):
-            return await handler(context)
-        result = await asyncio.to_thread(handler, context)
-        if inspect.isawaitable(result):
-            return await result
-        return result
-
-    async def _invoke_compensation(
+    async def _invoke(
         self,
-        handler: CompensationHandler,
-        context: CompensationContext,
+        handler: Callable[[HandlerContextT], Any | Awaitable[Any]],
+        context: HandlerContextT,
     ) -> Any:
         if inspect.iscoroutinefunction(handler):
             return await handler(context)

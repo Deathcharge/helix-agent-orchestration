@@ -38,6 +38,8 @@ Initial honest standalone release candidate.
 
 - Made first-use SQLite WAL initialization retry transient lock contention so concurrent
   store instances can safely create and use the same new checkpoint database.
+- Hardened Saga restoration by reapplying output-size bounds to compensations and by
+  making terminal forward failures durable only with the compensation phase transition.
 - Reset the package maturity from an unsupported “production stable” 1.0 claim to an
   explicit 0.1 alpha release candidate.
 - Reduced the supported distribution to the typed `samsarix_orchestration` runtime

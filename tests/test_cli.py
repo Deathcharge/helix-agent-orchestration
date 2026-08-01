@@ -172,6 +172,7 @@ def test_cli_saga_example_runs_and_reports_compensation(
     assert main(["plan", str(workflow), "--format", "json"]) == 0
     plan = json.loads(capsys.readouterr().out)
     assert plan["schema_version"] == 2
+    assert plan["workflow_schema_version"] == 3
     assert plan["compensation_steps"] == ["reserve", "charge"]
 
     assert (

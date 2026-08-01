@@ -17,6 +17,8 @@ from samsarix_orchestration import (
     CompensationPolicy,
     InMemoryCheckpointStore,
     SqliteCheckpointStore,
+    StepResult,
+    StepState,
     WorkflowCheckpoint,
     WorkflowDefinition,
     WorkflowEventKind,
@@ -431,3 +433,86 @@ async def test_resume_rejects_inconsistent_compensation_phases() -> None:
                 checkpoint_store=ForgedStore(value),
                 resume=True,
             )
+
+
+@pytest.mark.asyncio
+async def test_restore_applies_current_output_bound_to_compensations() -> None:
+    store = InMemoryCheckpointStore()
+
+    async def fail(context: Any) -> None:
+        raise RuntimeError(context.step.id)
+
+    await WorkflowRunner(
+        {
+            "reserve": lambda context: context.step.id,
+            "charge": lambda context: context.step.id,
+            "fail": fail,
+        },
+        compensations={"release": lambda context: "x" * 100, "refund": lambda c: "ok"},
+    ).run(saga_workflow(), run_id="bounded-restore", checkpoint_store=store)
+
+    bounded = WorkflowRunner(
+        {
+            "reserve": lambda context: context.step.id,
+            "charge": lambda context: context.step.id,
+            "fail": fail,
+        },
+        compensations={"release": lambda context: "ok", "refund": lambda context: "ok"},
+        max_result_bytes=20,
+    )
+    with pytest.raises(WorkflowExecutionError, match="checkpoint compensation output.*limit"):
+        await bounded.run(
+            saga_workflow(),
+            run_id="bounded-restore",
+            checkpoint_store=store,
+            resume=True,
+        )
+
+
+def test_forward_checkpoint_defers_terminal_failures_until_saga_transition() -> None:
+    successful = StepResult(
+        step_id="reserve",
+        agent="local",
+        action="reserve",
+        state=StepState.SUCCEEDED,
+        attempts=1,
+        started_at="2026-08-01T00:00:00Z",
+        finished_at="2026-08-01T00:00:01Z",
+        duration_ms=1.0,
+        output="reserved",
+    )
+    failed = StepResult(
+        step_id="notify",
+        agent="local",
+        action="fail",
+        state=StepState.FAILED,
+        attempts=1,
+        started_at="2026-08-01T00:00:01Z",
+        finished_at="2026-08-01T00:00:02Z",
+        duration_ms=1.0,
+        error={"type": "RuntimeError", "message": "offline"},
+    )
+    results = {"reserve": successful, "notify": failed}
+    identity = {
+        "workflow_digest": "a" * 64,
+        "input_digest": "b" * 64,
+    }
+
+    forward = WorkflowRunner._build_checkpoint(
+        saga_workflow(),
+        "phase-filter",
+        **identity,
+        results=results,
+        approvals={},
+    )
+    compensating = WorkflowRunner._build_checkpoint(
+        saga_workflow(),
+        "phase-filter",
+        **identity,
+        results=results,
+        approvals={},
+        phase=CheckpointPhase.COMPENSATING,
+    )
+
+    assert [result.step_id for result in forward.steps] == ["reserve"]
+    assert [result.step_id for result in compensating.steps] == ["reserve", "notify"]
