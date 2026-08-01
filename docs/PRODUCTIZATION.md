@@ -79,7 +79,8 @@ explicitly registered Python callables.
 
 The 0.1 release deliberately excludes built-in LLM/provider adapters, dynamic plugin
 loading, arbitrary command/code execution, authentication, a web UI/API, cloud
-deployment, durable checkpoints, distributed workers, subscriptions, and telemetry.
+deployment, distributed workers, subscriptions, and telemetry. Bounded local checkpoints
+are opt-in; they do not provide distributed durable execution.
 
 ## Product and architecture decisions
 
@@ -133,7 +134,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 ### P2
 
 - [x] Remove excluded historical source subpackages while preserving them in Git history.
-- Add an opt-in durable checkpoint interface after idempotency semantics are designed.
+- [x] Add bounded opt-in checkpoints with exact identity and stable idempotency keys.
 - Add structured progress callbacks and explicit per-step cancellation reporting.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
@@ -188,14 +189,14 @@ supported product boundary was established. It remains recoverable from commit
 `6e10c5bd515e61245b289c18c321e0b24664403b`; none of it was advertised or shipped as a
 supported Samsarix feature.
 
-Durable execution is also deferred. Correct persistence requires checkpoint identity,
-atomic commit semantics, output compatibility, resume rules, idempotency, migration, and
-retention design. A partial JSON state dump would be misleading.
+Distributed durable execution remains deferred. The local checkpoint contract now covers
+identity, atomic file replacement, output compatibility, resume rules, and idempotency
+keys. Cross-host coordination, retention automation, and exactly-once effects are not
+claimed.
 
 ## External and owner-controlled blockers
 
 - Publication: choose and authorize a package registry and confirm name ownership.
-- CI: observe the first GitHub Actions run on Python 3.11, 3.12, and 3.13.
 - Release: create an owner-approved version/tag and publish artifacts after CI passes.
 
 ## Known risks
@@ -203,8 +204,8 @@ retention design. A partial JSON state dump would be misleading.
 - Sync Python handlers run in threads. A timeout stops waiting but cannot forcibly stop
   arbitrary thread code; handlers must apply timeouts to their own blocking I/O. The
   runner does not retry a timed-out sync handler because that could overlap side effects.
-- There is no durable checkpoint. A process crash loses in-memory run state.
-- External side effects are not automatically idempotent.
+- A crash after an external effect but before checkpoint commit can repeat that effect;
+  handlers must apply the stable idempotency key at the destination.
 - Handler output is measured after it is returned, so a malicious trusted handler can
   allocate memory before the 1 MiB serialization limit is applied.
 - The old distribution/import/CLI aliases intentionally remain visible during the 0.1
@@ -212,17 +213,19 @@ retention design. A partial JSON state dump would be misleading.
 
 ## Final verification
 
-Final verification ran from a fresh Python 3.11 virtual environment after
-`python -m pip install -e ".[dev]"`:
+The release-candidate foundation was verified from a fresh Python 3.11 virtual
+environment. The durable-checkpoint milestone was then verified locally on Python
+3.14 and packaged with Python 3.11; the repository CI matrix remains authoritative
+for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 12 source files across the primary and compatibility packages;
-- `python -m pytest`: 40 passed, 92.32% branch-aware coverage;
+- `python -m mypy`: pass, 14 source files across the primary and compatibility packages;
+- `python -m pytest`: 64 passed, 91.45% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
   both `python -m` entry points, `init`, `validate`, and `run` passed;
-- wheel boundary inspection: 22 archive entries, 7 primary package entries, 7 thin
+- wheel boundary inspection: 24 archive entries, 8 primary package entries, 8 thin
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 
@@ -230,12 +233,12 @@ Artifact inventory for the verified build:
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `samsarix_orchestration-0.1.0-py3-none-any.whl` | 26,023 | `677806733a448a75464e383ad7c709a9679694eec4b27ee88e65894f16e9032d` |
+| `samsarix_orchestration-0.1.0-py3-none-any.whl` | 31,838 | recorded in the external release attestation¹ |
 | `samsarix_orchestration-0.1.0.tar.gz` | built | record in the external release attestation¹ |
 
-¹ This document is included in the source archive, so embedding the source archive's own
-hash inside it would change that hash. Record the final sdist checksum alongside the
-published release instead.
+¹ Reproducible verification records the final wheel and source-archive checksums outside
+the source tree. Embedding either checksum here would make this document stale whenever
+the artifact is rebuilt, and the document itself is included in the source archive.
 
 ## Release disposition
 

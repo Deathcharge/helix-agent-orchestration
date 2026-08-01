@@ -66,7 +66,8 @@ def action(context: ActionContext) -> JSONValue: ...
 
 `context.workflow_input` is the run input. `context.dependencies` maps each declared
 dependency id to its output. `context.step.parameters` is the step's JSON parameter
-object, and `context.attempt` starts at 1.
+object, and `context.attempt` starts at 1. `context.run_id` identifies the logical run;
+`context.idempotency_key` is stable for that run and step across retries and resumes.
 
 Results must be finite JSON and fit within the runner's output bound. An exception or
 timeout consumes an attempt. When all attempts fail, the step is `failed`; dependent
@@ -76,3 +77,20 @@ overlap the same external side effect.
 
 The CLI exposes only `collect`, `echo`, `uppercase`, and `word_count`. Applications
 register real actions through `WorkflowRunner`; workflow files cannot import them.
+
+## Checkpoint and report contract
+
+Checkpoint version 1 stores the run id, canonical SHA-256 digests of the complete workflow
+and input, the save timestamp, and successful step results. A resume fails closed when the
+workflow, input, step metadata, dependency closure, JSON bounds, or checkpoint version does
+not match. Failed, blocked, cancelled, pending, and running results are never restored.
+
+Run reports add two fields:
+
+| Field | Meaning |
+| --- | --- |
+| `resumed` | Whether this invocation requested checkpoint restoration. |
+| `restored_steps` | Number of successful results reused without invoking their handlers. |
+
+The JSON directory store bounds each file to 16 MiB by default and uses a SHA-256 hash of
+the run id as its filename. The run id remains inside the auditable JSON document.

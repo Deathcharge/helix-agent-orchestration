@@ -8,6 +8,8 @@ Initial honest standalone release candidate.
 
 ### Added
 
+- Opt-in checkpoint stores, exact workflow/input identity validation, and resumable runs.
+- Stable action idempotency keys and a runnable side-effect recovery example.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.
 - MPL-2.0 licensing, ownership notice, trademark guidance, and rename migration guide.

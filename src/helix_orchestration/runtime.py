@@ -6,8 +6,10 @@
 from samsarix_orchestration.runtime import (
     ActionContext,
     ActionHandler,
+    CheckpointStore,
     StepResult,
     StepState,
+    WorkflowCheckpoint,
     WorkflowExecutionError,
     WorkflowRunner,
     WorkflowRunResult,
@@ -16,8 +18,10 @@ from samsarix_orchestration.runtime import (
 __all__ = [
     "ActionContext",
     "ActionHandler",
+    "CheckpointStore",
     "StepResult",
     "StepState",
+    "WorkflowCheckpoint",
     "WorkflowExecutionError",
     "WorkflowRunResult",
     "WorkflowRunner",

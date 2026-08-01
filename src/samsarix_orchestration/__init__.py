@@ -3,10 +3,17 @@
 
 """Public API for Samsarix Orchestration."""
 
+from .checkpoints import (
+    MAX_CHECKPOINT_BYTES,
+    InMemoryCheckpointStore,
+    JsonDirectoryCheckpointStore,
+)
 from .runtime import (
     ActionContext,
+    CheckpointStore,
     StepResult,
     StepState,
+    WorkflowCheckpoint,
     WorkflowExecutionError,
     WorkflowRunner,
     WorkflowRunResult,
@@ -21,12 +28,17 @@ from .spec import (
 )
 
 __all__ = [
+    "MAX_CHECKPOINT_BYTES",
     "MAX_WORKFLOW_BYTES",
     "ActionContext",
+    "CheckpointStore",
+    "InMemoryCheckpointStore",
+    "JsonDirectoryCheckpointStore",
     "StepResult",
     "StepState",
     "ValidationIssue",
     "WorkflowDefinition",
+    "WorkflowCheckpoint",
     "WorkflowExecutionError",
     "WorkflowRunResult",
     "WorkflowRunner",

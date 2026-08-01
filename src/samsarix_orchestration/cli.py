@@ -16,6 +16,7 @@ from typing import Any
 
 from . import __version__
 from .actions import builtin_actions
+from .checkpoints import JsonDirectoryCheckpointStore
 from .runtime import WorkflowExecutionError, WorkflowRunner
 from .spec import WorkflowSpecError, load_workflow
 
@@ -84,6 +85,20 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
         action="store_true",
         help="Explicitly replace an existing output file.",
     )
+    run_parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        help="Atomically save successful steps for a resumable run.",
+    )
+    run_parser.add_argument(
+        "--run-id",
+        help="Stable run identifier used for checkpoints and idempotency keys.",
+    )
+    run_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a matching checkpoint; requires --checkpoint-dir and --run-id.",
+    )
 
     subparsers.add_parser("actions", help="List the safe built-in CLI actions.")
     return parser
@@ -125,9 +140,26 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
                 print(name)
             return 0
         if args.command == "run":
+            if args.resume and args.checkpoint_dir is None:
+                raise WorkflowSpecError("--resume requires --checkpoint-dir.")
+            if args.resume and args.run_id is None:
+                raise WorkflowSpecError("--resume requires --run-id.")
             workflow = load_workflow(args.path)
             workflow_input = _load_input(args.input, args.input_file)
-            result = asyncio.run(WorkflowRunner(builtin_actions()).run(workflow, workflow_input))
+            checkpoint_store = (
+                JsonDirectoryCheckpointStore(args.checkpoint_dir)
+                if args.checkpoint_dir is not None
+                else None
+            )
+            result = asyncio.run(
+                WorkflowRunner(builtin_actions()).run(
+                    workflow,
+                    workflow_input,
+                    run_id=args.run_id,
+                    checkpoint_store=checkpoint_store,
+                    resume=args.resume,
+                )
+            )
             report = result.to_dict()
             rendered = json.dumps(report, indent=2, sort_keys=True)
             if args.output:

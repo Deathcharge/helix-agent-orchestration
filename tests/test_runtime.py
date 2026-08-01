@@ -5,13 +5,16 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import replace
 from typing import Any
 
 import pytest
 
 from samsarix_orchestration import (
     ActionContext,
+    InMemoryCheckpointStore,
     StepState,
+    WorkflowCheckpoint,
     WorkflowDefinition,
     WorkflowExecutionError,
     WorkflowRunner,
@@ -244,3 +247,193 @@ async def test_handler_returning_awaitable_is_supported() -> None:
         workflow(WorkflowStep(id="x", action="factory"))
     )
     assert result.steps[0].output == "awaited"
+
+
+@pytest.mark.asyncio
+async def test_failed_workflow_resumes_without_repeating_successful_steps() -> None:
+    store = InMemoryCheckpointStore()
+    source_calls = 0
+    publish_calls = 0
+    publish_succeeds = False
+    observed_keys: list[str] = []
+
+    async def source(context: ActionContext) -> dict[str, int]:
+        nonlocal source_calls
+        source_calls += 1
+        observed_keys.append(context.idempotency_key)
+        assert context.run_id == "invoice-42"
+        return {"invoice": 42}
+
+    async def publish(context: ActionContext) -> str:
+        nonlocal publish_calls
+        publish_calls += 1
+        observed_keys.append(context.idempotency_key)
+        if not publish_succeeds:
+            raise ConnectionError("publisher unavailable")
+        assert context.dependencies["source"] == {"invoice": 42}
+        return "published"
+
+    definition = workflow(
+        WorkflowStep(id="source", action="source"),
+        WorkflowStep(id="publish", action="publish", dependencies=("source",)),
+    )
+    runner = WorkflowRunner({"source": source, "publish": publish})
+
+    failed = await runner.run(
+        definition,
+        {"tenant": "acme"},
+        run_id="invoice-42",
+        checkpoint_store=store,
+    )
+    assert failed.status == "failed"
+    checkpoint = store.load("invoice-42")
+    assert checkpoint is not None
+    assert [step.step_id for step in checkpoint.steps] == ["source"]
+
+    publish_succeeds = True
+    resumed = await runner.run(
+        definition,
+        {"tenant": "acme"},
+        run_id="invoice-42",
+        checkpoint_store=store,
+        resume=True,
+    )
+
+    assert resumed.succeeded
+    assert resumed.resumed is True
+    assert resumed.restored_steps == 1
+    assert source_calls == 1
+    assert publish_calls == 2
+    assert observed_keys == [
+        "invoice-42:source",
+        "invoice-42:publish",
+        "invoice-42:publish",
+    ]
+    assert resumed.to_dict()["restored_steps"] == 1
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_changed_workflow_or_input() -> None:
+    store = InMemoryCheckpointStore()
+    runner = WorkflowRunner({"echo": lambda context: context.workflow_input})
+    original = workflow(WorkflowStep(id="echo", action="echo"))
+    await runner.run(
+        original,
+        {"value": 1},
+        run_id="stable-run",
+        checkpoint_store=store,
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="already exists"):
+        await runner.run(
+            original,
+            {"value": 1},
+            run_id="stable-run",
+            checkpoint_store=store,
+        )
+
+    changed = WorkflowDefinition(
+        name=original.name,
+        description="changed",
+        steps=original.steps,
+    )
+    with pytest.raises(WorkflowExecutionError, match="workflow definition"):
+        await runner.run(
+            changed,
+            {"value": 1},
+            run_id="stable-run",
+            checkpoint_store=store,
+            resume=True,
+        )
+    with pytest.raises(WorkflowExecutionError, match="workflow input"):
+        await runner.run(
+            original,
+            {"value": 2},
+            run_id="stable-run",
+            checkpoint_store=store,
+            resume=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_resume_and_run_id_configuration_is_validated() -> None:
+    definition = workflow(WorkflowStep(id="ok", action="ok"))
+    runner = WorkflowRunner({"ok": lambda _context: None})
+    with pytest.raises(WorkflowExecutionError, match="checkpoint store"):
+        await runner.run(definition, run_id="known", resume=True)
+    with pytest.raises(WorkflowExecutionError, match="explicit run_id"):
+        await runner.run(
+            definition,
+            checkpoint_store=InMemoryCheckpointStore(),
+            resume=True,
+        )
+    with pytest.raises(WorkflowExecutionError, match="No checkpoint"):
+        await runner.run(
+            definition,
+            run_id="missing",
+            checkpoint_store=InMemoryCheckpointStore(),
+            resume=True,
+        )
+    with pytest.raises(WorkflowExecutionError, match="run_id must match"):
+        await runner.run(definition, run_id="../unsafe")
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_store_failures_are_execution_errors() -> None:
+    class BrokenLoadStore:
+        def load(self, _run_id: str) -> WorkflowCheckpoint | None:
+            raise OSError("read unavailable")
+
+        def save(self, _checkpoint: WorkflowCheckpoint) -> None:
+            raise AssertionError("load must fail before save")
+
+    class BrokenSaveStore:
+        def load(self, _run_id: str) -> None:
+            return None
+
+        def save(self, _checkpoint: WorkflowCheckpoint) -> None:
+            raise OSError("write unavailable")
+
+    definition = workflow(WorkflowStep(id="ok", action="ok"))
+    runner = WorkflowRunner({"ok": lambda _context: None})
+    with pytest.raises(WorkflowExecutionError, match="Cannot save checkpoint"):
+        await runner.run(
+            definition,
+            run_id="broken",
+            checkpoint_store=BrokenSaveStore(),
+        )
+    with pytest.raises(WorkflowExecutionError, match="Cannot load checkpoint"):
+        await runner.run(
+            definition,
+            run_id="broken",
+            checkpoint_store=BrokenLoadStore(),
+            resume=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_requires_complete_dependency_closure() -> None:
+    definition = workflow(
+        WorkflowStep(id="first", action="ok"),
+        WorkflowStep(id="second", action="ok", dependencies=("first",)),
+    )
+    backing = InMemoryCheckpointStore()
+    runner = WorkflowRunner({"ok": lambda _context: "done"})
+    await runner.run(definition, run_id="corrupt", checkpoint_store=backing)
+    checkpoint = backing.load("corrupt")
+    assert checkpoint is not None
+
+    class IncompleteStore:
+        def load(self, _run_id: str) -> WorkflowCheckpoint:
+            return replace(checkpoint, steps=(checkpoint.steps[1],))
+
+        def save(self, _checkpoint: WorkflowCheckpoint) -> None:
+            raise AssertionError("resume must fail before saving")
+
+    with pytest.raises(WorkflowExecutionError, match="missing a dependency"):
+        await runner.run(
+            definition,
+            run_id="corrupt",
+            checkpoint_store=IncompleteStore(),
+            resume=True,
+        )

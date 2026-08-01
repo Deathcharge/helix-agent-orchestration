@@ -11,6 +11,7 @@ samsarix_orchestration
 ├── spec.py       JSON schema validation and graph checks
 ├── runtime.py    bounded dependency-aware execution
 ├── actions.py    deterministic CLI demonstration actions
+├── checkpoints.py bounded in-memory and atomic JSON checkpoint stores
 ├── cli.py        local file/input/output boundary and exit codes
 └── __main__.py   python -m entry point
 ```
@@ -38,6 +39,9 @@ removed from the working tree and remain available in Git history.
    started become `blocked` after the first failed batch.
 7. Cancellation cancels the active batch and propagates `CancelledError` to the caller.
    The CLI translates a user interrupt to exit code 130.
+8. When a checkpoint store is explicit, successful batch results are atomically persisted
+   with canonical workflow and input digests. Resume restores only matching successful
+   steps and recomputes the remaining graph.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
 the host application's explicit action registry and configuration.
@@ -67,8 +71,11 @@ the host application's explicit action registry and configuration.
   the runner skips configured retries to avoid overlapping the same side effect.
 - Async work reaches a terminal state before the run report is returned. A timed-out sync
   worker may still be exiting in the background, so handlers must bound their own I/O.
-- There is no checkpoint/resume. A process crash requires a new run, and handlers with
-  external side effects must provide their own idempotency.
+- Checkpoint stores are opt-in and use a single-writer contract. The bundled JSON store
+  writes one bounded file per run with same-directory temporary files and atomic replace.
+- Checkpointing is at-least-once. A crash between an external effect and checkpoint commit
+  can repeat the handler; the stable `run-id:step-id` idempotency key lets the destination
+  deduplicate that effect.
 - Timestamps and durations are observations, not a durable audit log.
 
 ## Why this scope
@@ -81,6 +88,6 @@ private services.
 
 Current low-level orchestration tools emphasize durable execution, persistence,
 streaming, and human approval, while general workflow tools expose explicit task states,
-timeouts, and retries. Samsarix Orchestration 0.1 implements only the transparent local
-subset it can support honestly. Durable state and distributed execution remain explicit
-non-goals rather than simulated features.
+timeouts, retries, and resumability. Samsarix Orchestration 0.1 implements the transparent
+embedded subset it can support honestly. Distributed execution and exactly-once effects
+remain explicit non-goals rather than simulated features.

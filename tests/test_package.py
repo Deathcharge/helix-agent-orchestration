@@ -10,4 +10,8 @@ def test_public_api_has_release_version() -> None:
     assert samsarix_orchestration.__version__ == "0.1.0"
     assert helix_orchestration.__version__ == samsarix_orchestration.__version__
     assert helix_orchestration.WorkflowRunner is samsarix_orchestration.WorkflowRunner
+    assert (
+        helix_orchestration.JsonDirectoryCheckpointStore
+        is samsarix_orchestration.JsonDirectoryCheckpointStore
+    )
     assert build_legacy_parser().prog == "helix-orchestration"

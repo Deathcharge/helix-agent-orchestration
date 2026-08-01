@@ -20,12 +20,14 @@ are tested. The distribution has not yet been published to a package index.
 - Explicit sync or async Python action registration.
 - Concurrent execution bounded to 1–64 in-flight actions per workflow.
 - Per-step timeouts, 0–10 retries, bounded retry delays, and fail-fast behavior.
+- Opt-in atomic JSON checkpoints that resume without repeating verified successful steps.
+- Stable per-step idempotency keys for safely designed external side effects.
 - JSON-safe inputs, outputs, errors, and terminal step states.
 - A provider-free CLI example using four deterministic built-in actions.
-- No runtime dependencies, network calls, telemetry, credentials, or hidden persistence.
+- No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
 
-Durable checkpoints, process isolation, distributed workers, human approval pauses,
-provider adapters, and a remote API are deliberately out of scope for 0.1.
+Distributed workers, process isolation, human approval pauses, provider adapters, and a
+remote API are deliberately out of scope for 0.1.
 
 ## Fastest successful path
 
@@ -56,6 +58,7 @@ samsarix-orchestration init PATH [--force]
 samsarix-orchestration validate PATH [--json]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
                                  [--output PATH] [--force-output]
+                                 [--checkpoint-dir PATH] [--run-id ID] [--resume]
 ```
 
 Exit codes are stable:
@@ -113,6 +116,37 @@ An action receives an `ActionContext` containing the workflow input, its validat
 definition, dependency outputs, workflow name, and current attempt number. Handlers run
 with the privileges of the Python process; only register trusted code.
 
+## Resume expensive or side-effecting work
+
+Checkpointing is explicit and remains local. Give a run a stable identifier and a store:
+
+```python
+from samsarix_orchestration import JsonDirectoryCheckpointStore
+
+store = JsonDirectoryCheckpointStore(".samsarix-runs")
+result = await runner.run(
+    definition,
+    workflow_input,
+    run_id="customer-import-2026-08-01",
+    checkpoint_store=store,
+    resume=True,
+)
+```
+
+The first attempt omits `resume=True`. A resumed attempt must use the exact same workflow
+definition and JSON input; canonical SHA-256 identities prevent accidental replay against
+changed work. Only successful steps are restored. Failed steps run again, and every
+handler receives a stable `context.idempotency_key` of `run-id:step-id` across attempts.
+Starting a new checkpointed run with an existing run id fails closed; explicitly resume
+it or choose another id.
+
+This is an at-least-once contract, not an exactly-once claim. A process can stop after an
+external effect succeeds but before its checkpoint is written, so effectful handlers must
+pass the idempotency key to the target system or otherwise deduplicate it. The runnable
+[resumable order example](examples/resumable_order_pipeline.py) demonstrates that crash
+window without duplicating a receipt. See [real use cases](docs/USE_CASES.md) for fit and
+non-fit guidance.
+
 ## Development
 
 ```bash
@@ -162,7 +196,9 @@ and cost controls. The built-in CLI path has no API or operating cost beyond loc
 compute and disk space for an explicitly requested report.
 
 No telemetry is collected. Run inputs and outputs stay in memory unless `--output` is
-provided; the caller controls report retention and file permissions.
+provided or checkpointing is explicitly enabled. Checkpoints contain successful step
+outputs in plaintext JSON; the caller controls their directory permissions, encryption,
+retention, and deletion.
 
 ## Project and license status
 
