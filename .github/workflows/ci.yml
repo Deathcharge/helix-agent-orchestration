@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -79,3 +79,5 @@ jobs:
           python -c "import json,sys; r=json.load(open(sys.argv[1])); assert r['status'] == 'failed'; assert r['compensation_status'] == 'succeeded'; assert len(r['compensations']) == 2" "$verify_dir/saga-result.json"
           samsarix-orchestration runs show "$verify_dir/runs.db" wheel-saga > "$verify_dir/saga-checkpoint.json"
           python -c "import json,sys; c=json.load(open(sys.argv[1])); assert c['phase'] == 'complete'; assert c['successful_compensations'] == 2; assert all('output' not in x for x in c['compensations'])" "$verify_dir/saga-checkpoint.json"
+          python examples/subprocess_pipeline.py > "$verify_dir/subprocess-result.json"
+          python -c "import json,sys; r=json.load(open(sys.argv[1])); assert r['status'] == 'succeeded'; assert r['steps'][1]['output']['summary'] == 'validated 5 words'" "$verify_dir/subprocess-result.json"

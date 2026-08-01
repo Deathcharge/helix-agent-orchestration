@@ -20,10 +20,10 @@ DEFAULT_MAX_SUBPROCESS_INPUT_BYTES = 1_048_576
 DEFAULT_MAX_SUBPROCESS_STDOUT_BYTES = 1_048_576
 DEFAULT_MAX_SUBPROCESS_STDERR_BYTES = 16_384
 MAX_SUBPROCESS_STREAM_BYTES = 16_777_216
-MAX_SUBPROCESS_COMMAND_PARTS = 64
-MAX_SUBPROCESS_COMMAND_CHARACTERS = 32_768
-MAX_SUBPROCESS_ENVIRONMENT_ENTRIES = 128
-MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS = 65_536
+_MAX_SUBPROCESS_COMMAND_PARTS = 64
+_MAX_SUBPROCESS_COMMAND_CHARACTERS = 32_768
+_MAX_SUBPROCESS_ENVIRONMENT_ENTRIES = 128
+_MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS = 65_536
 SubprocessContext = ActionContext | CompensationContext
 SubprocessActionHandler = Callable[[SubprocessContext], Awaitable[Any]]
 
@@ -131,17 +131,17 @@ def _validated_configuration(
         parts = tuple(command)
     except TypeError as exc:
         raise ValueError("command must be an iterable of argument strings") from exc
-    if not parts or len(parts) > MAX_SUBPROCESS_COMMAND_PARTS:
+    if not parts or len(parts) > _MAX_SUBPROCESS_COMMAND_PARTS:
         raise ValueError(
-            f"command must contain between 1 and {MAX_SUBPROCESS_COMMAND_PARTS} arguments"
+            f"command must contain between 1 and {_MAX_SUBPROCESS_COMMAND_PARTS} arguments"
         )
     if any(not isinstance(part, str) or not part or "\0" in part for part in parts):
         raise ValueError("command arguments must be non-empty strings without null bytes")
     if not Path(parts[0]).is_absolute():
         raise ValueError("command executable must be an absolute path")
-    if sum(len(part) for part in parts) > MAX_SUBPROCESS_COMMAND_CHARACTERS:
+    if sum(len(part) for part in parts) > _MAX_SUBPROCESS_COMMAND_CHARACTERS:
         raise ValueError(
-            f"command may contain at most {MAX_SUBPROCESS_COMMAND_CHARACTERS} characters"
+            f"command may contain at most {_MAX_SUBPROCESS_COMMAND_CHARACTERS} characters"
         )
     if not isinstance(inherit_environment, bool):
         raise ValueError("inherit_environment must be a boolean")
@@ -165,16 +165,24 @@ def _validated_configuration(
 
     normalized_cwd: str | None = None
     if cwd is not None:
-        normalized_cwd = os.fspath(cwd)
-        if not normalized_cwd or "\0" in normalized_cwd:
+        try:
+            candidate_cwd = os.fspath(cwd)
+        except TypeError as exc:
+            raise ValueError("cwd must be a filesystem path") from exc
+        if (
+            not isinstance(candidate_cwd, str)
+            or not candidate_cwd
+            or "\0" in candidate_cwd
+        ):
             raise ValueError("cwd must be a non-empty filesystem path without null bytes")
+        normalized_cwd = candidate_cwd
 
     if environment is not None and not isinstance(environment, Mapping):
         raise ValueError("environment must be a string mapping")
     raw_items = tuple((environment or {}).items())
-    if len(raw_items) > MAX_SUBPROCESS_ENVIRONMENT_ENTRIES:
+    if len(raw_items) > _MAX_SUBPROCESS_ENVIRONMENT_ENTRIES:
         raise ValueError(
-            f"environment may contain at most {MAX_SUBPROCESS_ENVIRONMENT_ENTRIES} entries"
+            f"environment may contain at most {_MAX_SUBPROCESS_ENVIRONMENT_ENTRIES} entries"
         )
     if any(
         not isinstance(key, str)
@@ -191,11 +199,11 @@ def _validated_configuration(
         )
     if (
         sum(len(key) + len(value) for key, value in raw_items)
-        > MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS
+        > _MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS
     ):
         raise ValueError(
             "environment may contain at most "
-            f"{MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS} characters"
+            f"{_MAX_SUBPROCESS_ENVIRONMENT_CHARACTERS} characters"
         )
     normalized_names = tuple(os.path.normcase(key) for key, _value in raw_items)
     if len(normalized_names) != len(set(normalized_names)):
@@ -265,22 +273,25 @@ async def _run_subprocess(
 
 
 def _encode_input(context: SubprocessContext, maximum: int) -> bytes:
+    value = bytearray()
     try:
-        encoded = json.dumps(
-            subprocess_envelope(context),
+        chunks = json.JSONEncoder(
             allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
-        ).encode("utf-8")
+        ).iterencode(subprocess_envelope(context))
+        for chunk in chunks:
+            encoded = chunk.encode("utf-8")
+            if len(value) + len(encoded) + 1 > maximum:
+                raise SubprocessActionError(
+                    f"Subprocess action input exceeded its {maximum}-byte limit."
+                )
+            value.extend(encoded)
     except (TypeError, ValueError) as exc:
         raise SubprocessActionError("Subprocess action input must be finite JSON data.") from exc
-    payload = encoded + b"\n"
-    if len(payload) > maximum:
-        raise SubprocessActionError(
-            f"Subprocess action input is {len(payload)} bytes; the limit is {maximum} bytes."
-        )
-    return payload
+    value.append(0x0A)
+    return bytes(value)
 
 
 async def _write_input(writer: asyncio.StreamWriter, value: bytes) -> None:
@@ -359,7 +370,22 @@ def _escaped_text(value: bytes) -> str:
 
 
 def _child_environment(configuration: _SubprocessConfiguration) -> dict[str, str]:
-    environment = dict(os.environ) if configuration.inherit_environment else {}
+    if configuration.inherit_environment:
+        environment = dict(os.environ)
+    else:
+        required_windows_names = {
+            "COMSPEC",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "TEMP",
+            "TMP",
+            "WINDIR",
+        }
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if os.name == "nt" and key.upper() in required_windows_names
+        }
     for key, value in configuration.environment:
         normalized = os.path.normcase(key)
         for inherited in tuple(environment):

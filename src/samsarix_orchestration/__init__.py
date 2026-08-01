@@ -53,6 +53,7 @@ from .sqlite_store import (
     CheckpointSummary,
     SqliteCheckpointStore,
 )
+
 # Bandit B404 matches this internal module name; it is not a stdlib subprocess import.
 from .subprocess_actions import (  # nosec B404
     DEFAULT_MAX_SUBPROCESS_INPUT_BYTES,

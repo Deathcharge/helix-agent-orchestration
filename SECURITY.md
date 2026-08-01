@@ -13,6 +13,34 @@ filesystem, subprocess, network, model, database, or credential access own
 authentication, authorization, destination controls, cancellation, idempotency,
 privacy, and cost limits at that boundary.
 
+`subprocess_action` is a lifecycle and memory boundary for trusted local executables, not
+a sandbox. Only host Python code can register it. The executable must be an absolute path,
+arguments are fixed at registration, and the adapter calls the OS directly without a shell;
+workflow input and parameters cannot rewrite the command. The child still runs as the same
+OS user and can access that user's files, network, devices, and other permitted resources.
+Use an actual container, restricted account, sandbox, or policy engine for untrusted code.
+
+The subprocess protocol intentionally transmits workflow input, step parameters, dependency
+outputs, run/step identity, and the idempotency key. Compensation requests also transmit the
+original forward output. Treat stdin and the worker as part of the same data-classification
+boundary. The default child environment contains only explicit entries and a small Windows
+startup allowlist (`SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PATHEXT`, `TEMP`, and `TMP` when
+present). `inherit_environment=True` may expose credentials and must be an explicit trust
+decision. Explicit variables replace platform-equivalent names case-insensitively on Windows.
+
+Protocol stdin, stdout, and stderr have independent configurable limits, each capped at
+16 MiB. Output must be exactly one finite UTF-8 JSON value. Stderr is hidden from persisted
+step errors unless `expose_stderr=True`; enable that only when its possible secret/PII content
+is acceptable in reports, checkpoints, and logs. Output bounds limit data retained by the
+adapter but cannot prevent a malicious child from consuming CPU, memory, disk, or network.
+
+On cancellation or runner timeout, the adapter terminates the direct child, waits for a
+bounded grace period, then kills and reaps it. Operating-system process creation can itself
+be temporarily uninterruptible, and descendants that detach or outlive their parent are not
+covered. External effects remain at least once: termination can happen after the child makes
+an effect but before it emits or checkpoints success, so workers must apply the supplied
+idempotency key at the destination.
+
 Checkpointing is opt-in and persists successful step outputs as plaintext JSON. The
 bundled directory store hashes run identifiers for filenames, bounds reads and writes,
 validates workflow/input identities, and replaces files atomically. The SQLite store

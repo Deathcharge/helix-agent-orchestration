@@ -86,6 +86,21 @@ async def test_json_protocol_round_trip_and_explicit_environment(
 
 
 @pytest.mark.asyncio
+async def test_environment_inheritance_and_explicit_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAMSARIX_INHERITED", "parent")
+    handler = python_action(
+        "import json,os,sys; json.load(sys.stdin); "
+        "json.dump(os.getenv('SAMSARIX_INHERITED'),sys.stdout)",
+        inherit_environment=True,
+        environment={"SAMSARIX_INHERITED": "explicit"},
+    )
+
+    assert await handler(action_context()) == "explicit"
+
+
+@pytest.mark.asyncio
 async def test_command_arguments_are_not_interpreted_by_a_shell() -> None:
     value = '$(echo injected); & | "quoted"'
     handler = python_action(
@@ -202,6 +217,38 @@ async def test_workflow_timeout_terminates_child_before_it_can_continue(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_timeout_retry_starts_only_after_previous_child_is_dead(tmp_path: Path) -> None:
+    marker = tmp_path / "overlap.txt"
+    handler = python_action(
+        "import json,pathlib,signal,sys,time; value=json.load(sys.stdin); "
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "(time.sleep(1.2),pathlib.Path(sys.argv[1]).write_text('overlap')) "
+        "if value['attempt']==1 else json.dump('recovered',sys.stdout)",
+        str(marker),
+        terminate_grace_seconds=0.05,
+    )
+    workflow = WorkflowDefinition(
+        name="process-timeout-retry",
+        steps=(
+            WorkflowStep(
+                id="work",
+                action="external",
+                timeout_seconds=0.7,
+                retries=1,
+            ),
+        ),
+    )
+
+    result = await WorkflowRunner({"external": handler}).run(workflow)
+    await asyncio.sleep(1.3)
+
+    assert result.succeeded
+    assert result.steps[0].attempts == 2
+    assert result.steps[0].output == "recovered"
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
 async def test_subprocess_handler_can_compensate_with_original_output() -> None:
     store = InMemoryCheckpointStore()
     forward = python_action(
@@ -252,10 +299,21 @@ async def test_configured_working_directory_is_used(tmp_path: Path) -> None:
     assert Path(await handler(action_context())).resolve() == tmp_path.resolve()
 
 
+@pytest.mark.asyncio
+async def test_spawn_failure_and_non_finite_input_are_bounded_errors(tmp_path: Path) -> None:
+    with pytest.raises(SubprocessActionError, match="Cannot start"):
+        await subprocess_action((str((tmp_path / "missing-executable").resolve()),))(
+            action_context()
+        )
+    with pytest.raises(SubprocessActionError, match="finite JSON"):
+        await python_action("pass")(action_context(workflow_input=float("nan")))
+
+
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
         (("echo value",), "not a shell command"),
+        ((None,), "iterable"),
         (((),), "between 1"),
         ((("",),), "non-empty strings"),
         ((("relative-executable",),), "absolute path"),
@@ -282,6 +340,7 @@ def test_invalid_configuration_is_rejected(
         {"inherit_environment": 1},
         {"expose_stderr": 1},
         {"terminate_grace_seconds": -1},
+        {"cwd": b"not-text"},
     ],
 )
 def test_invalid_environment_and_lifecycle_options_are_rejected(

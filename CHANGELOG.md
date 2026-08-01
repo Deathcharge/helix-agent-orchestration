@@ -22,6 +22,9 @@ Initial honest standalone release candidate.
 - Strict schema-v3 compensating actions with reverse dependency waves, independent retry
   policy, durable phase recovery, separate outcomes, lifecycle events, and a runnable
   provider-free Saga rollback example.
+- Bounded subprocess actions with an absolute direct-exec command contract, versioned JSON
+  protocol, explicit environment inheritance, stream ceilings, cancellation termination,
+  Saga compatibility, and a runnable isolated-worker example.
 - Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.
@@ -40,6 +43,7 @@ Initial honest standalone release candidate.
   store instances can safely create and use the same new checkpoint database.
 - Hardened Saga restoration by reapplying output-size bounds to compensations and by
   making terminal forward failures durable only with the compensation phase transition.
+- Updated immutable GitHub Actions pins to Node-24-native checkout and Python setup releases.
 - Reset the package maturity from an unsupported “production stable” 1.0 claim to an
   explicit 0.1 alpha release candidate.
 - Reduced the supported distribution to the typed `samsarix_orchestration` runtime

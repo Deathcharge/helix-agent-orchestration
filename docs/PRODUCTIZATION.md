@@ -109,6 +109,9 @@ distributed durable execution or continuation from inside a running handler.
     phase before effects, execute successful steps in reverse dependency waves, retain
     completed compensation across resume, and report rollback separately from business
     workflow success.
+11. Offer process execution only as an application-registered direct-executable adapter.
+    Use a bounded versioned JSON protocol, no shell, explicit environment policy, and
+    terminate-then-kill cancellation; do not label trusted-process isolation a sandbox.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
@@ -134,6 +137,11 @@ Current ecosystem evidence informed the limits rather than expanding scope:
   hooks. Samsarix implements the bounded embedded form with explicit idempotent handlers:
   https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html
   and https://docs.prefect.io/v3/advanced/transactions
+- Python documents bounded async subprocess streams and direct exec APIs, while Prefect
+  explicitly distinguishes uninterruptible thread-pool timeouts from process execution.
+  Samsarix implements a smaller zero-service JSON adapter for trusted local tools:
+  https://docs.python.org/3/library/asyncio-subprocess.html and
+  https://docs.prefect.io/v3/how-to-guides/workflows/write-and-run#task-timeout-behavior
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
   https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
@@ -167,6 +175,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add durable, state-bound pre-action approval and rejection gates.
 - [x] Add offline dependency plans and Mermaid source for review and downstream UIs.
 - [x] Add durable schema-v3 compensating actions with reverse dependency execution.
+- [x] Add bounded direct subprocess actions with reliable timeout termination.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
 
@@ -189,6 +198,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
   Mermaid export.
 - [x] Durable compensating phase, separate handler registry and outcome, retry/resume,
   cancellation events, privacy-safe inspection, and installed CLI Saga journey.
+- [x] Shell-free absolute-command subprocess adapter with JSON protocol, stream and
+  environment bounds, cancellation cleanup, forward/compensation support, and example.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
@@ -223,6 +234,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - Added deterministic Python and CLI preflight plans with text, JSON, and Mermaid formats.
 - Added schema-v3 compensation policies, durable reverse execution, lifecycle events,
   planning metadata, and a provider-free `init --saga` failure/recovery demonstration.
+- Added a bounded subprocess JSON adapter and provider-free isolated-worker pipeline for
+  interruptible trusted command-line tools.
 - Adopted MPL-2.0 under Samsarix LLC ownership and added notice, migration, and trademark
   documentation.
 
@@ -272,6 +285,8 @@ release provenance, or third-party adoption gates.
 - Sync Python handlers run in threads. A timeout stops waiting but cannot forcibly stop
   arbitrary thread code; handlers must apply timeouts to their own blocking I/O. The
   runner does not retry a timed-out sync handler because that could overlap side effects.
+  Applications can opt into the subprocess adapter for direct-child termination, but it
+  is not a sandbox and does not own arbitrary descendant process trees.
 - A crash after an external effect but before checkpoint commit can repeat that effect;
   handlers must apply the stable idempotency key at the destination.
 - A compensation can fail or be only partially meaningful. Earlier prerequisites remain
@@ -290,8 +305,8 @@ fully verified and packaged with Python 3.11; the repository CI matrix remains
 authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
-- `python -m mypy`: pass, 20 source files across the primary and compatibility packages;
-- `python -m pytest`: 148 passed, 89.08% branch-aware coverage;
+- `python -m mypy`: pass, 22 source files across the primary and compatibility packages;
+- `python -m pytest`: 175 passed, 88.96% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
@@ -299,9 +314,11 @@ authoritative for Python 3.11 through 3.13:
   the pause/approve/resume journey passed;
 - a third empty environment installed the wheel with `--no-deps` and produced verified
   JSON and Mermaid plans through the installed console script and compatibility API;
+- a fourth empty Python 3.11 environment installed the exact wheel with `--no-deps`,
+  imported both subprocess compatibility APIs, and ran the two-process JSON pipeline;
 - eight separate PowerShell job processes committed distinct runs to one installed-wheel
   SQLite database without loss;
-- wheel boundary inspection: 30 archive entries, 11 primary package entries, 11 thin
+- wheel boundary inspection: 32 archive entries, 12 primary package entries, 12 thin
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 

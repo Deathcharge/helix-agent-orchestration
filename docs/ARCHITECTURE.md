@@ -15,6 +15,7 @@ samsarix_orchestration
 ├── sqlite_store.py transactional same-host SQLite checkpoints and inspection
 ├── events.py     versioned privacy-minimized lifecycle event contract
 ├── planning.py   deterministic dependency plans and offline Mermaid source
+├── subprocess_actions.py bounded child-process JSON action adapter
 ├── cli.py        local file/input/output boundary and exit codes
 └── __main__.py   python -m entry point
 ```
@@ -56,6 +57,10 @@ removed from the working tree and remain available in Git history.
 12. Schema-v3 failures and approval rejections transition a durable checkpoint to
     `compensating` before reverse handlers start. Successful effects are reversed in
     dependency-safe waves; completed reversals persist and are skipped on resume.
+13. An application may register `subprocess_action(...)` as either kind of handler. The
+    adapter validates a fixed absolute command, sends one bounded versioned JSON envelope,
+    drains bounded stdout/stderr concurrently, and terminates the direct child on timeout
+    or cancellation before returning control to the runner.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
 the host application's explicit forward-action registry, compensation registry, and
@@ -68,6 +73,10 @@ configuration.
   registry supplied by the host application.
 - Registered handlers are trusted code with the process's full filesystem, network,
   environment, and subprocess privileges. The runtime is not an isolation boundary.
+- A subprocess command is also application-registered trusted code; workflow JSON cannot
+  supply or interpolate its executable or arguments. It runs as the invoking OS user and
+  is process-isolated, not sandboxed. By default it receives explicit environment entries
+  plus a small Windows startup allowlist, not the general parent environment.
 - Compensation names resolve only through a separate host-supplied registry. Workflow
   data cannot turn a forward action into an implicitly trusted compensator.
 - Dependency outputs remain in memory and are passed only to declared dependants. They
@@ -94,6 +103,13 @@ configuration.
   the runner skips configured retries to avoid overlapping the same side effect.
 - Async work reaches a terminal state before the run report is returned. A timed-out sync
   worker may still be exiting in the background, so handlers must bound their own I/O.
+- The subprocess adapter is an async handler, so runner timeouts cooperatively enter its
+  cleanup path. It sends terminate to the direct child, waits up to the configured grace,
+  then kills and waits. The initial OS process spawn may itself delay cancellation, and
+  arbitrary grandchildren are outside this direct-child contract.
+- Subprocess stdin, stdout, and stderr have independent byte ceilings. The protocol output
+  must be one finite UTF-8 JSON value. A nonzero exit or protocol violation is a normal
+  attempt failure; stderr is hidden unless the application explicitly opts to persist it.
 - Checkpoint stores are opt-in. The bundled JSON store writes one bounded file per run
   with same-directory temporary files and atomic replace and requires application-owned
   writer coordination.
@@ -162,3 +178,9 @@ by AWS and Prefect while retaining explicit handlers and local persistence:
 
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html
 - https://docs.prefect.io/v3/advanced/transactions
+
+Subprocess actions follow Python's direct async process API and Prefect's documented
+thread-versus-process timeout distinction while retaining a much smaller embedded contract:
+
+- https://docs.python.org/3/library/asyncio-subprocess.html
+- https://docs.prefect.io/v3/how-to-guides/workflows/write-and-run#task-timeout-behavior

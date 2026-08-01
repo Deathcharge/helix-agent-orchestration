@@ -5,7 +5,8 @@ planning, and running small dependency-aware workflows. Application code registe
 sync or async Python callables as actions; Samsarix supplies graph validation, bounded
 concurrency, per-step timeouts and retries, failure propagation, and a JSON run report.
 Schema-v3 workflows can also reverse completed external effects with durable compensating
-actions after a later failure or approval rejection.
+actions after a later failure or approval rejection. Trusted local tools can run through
+a bounded subprocess JSON protocol when thread cancellation is not strong enough.
 
 It is for Python developers who want a transparent provider-neutral orchestration
 primitive before adopting a distributed or hosted workflow system. It does not include
@@ -32,14 +33,17 @@ not yet been published to a package index.
 - Schema-v3 orchestrated Saga compensation with reverse dependency ordering, independent
   retry policies, interruption-safe checkpoints, and stable compensation idempotency keys.
 - Side-effect-free dependency plans and offline Mermaid graph export for preflight review.
+- Shell-free subprocess actions with absolute executables, bounded JSON input/output,
+  explicit environment inheritance, and terminate-then-kill cancellation.
 - A separately installed consumer proving resume, idempotency, and event contracts across
   a real package boundary.
 - JSON-safe inputs, outputs, errors, and terminal step states.
 - Provider-free CLI examples for successful, approval-gated, and compensating workflows.
 - No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
 
-Distributed workers, process isolation, dynamic mid-handler interrupts, provider adapters,
-and a remote API are deliberately out of scope for 0.1.
+Distributed workers, sandboxing, dynamic mid-handler interrupts, provider adapters, and a
+remote API are deliberately out of scope for 0.1. Subprocess actions isolate lifecycle and
+memory, but remain trusted local programs with the invoking user's operating-system access.
 
 ## Fastest successful path
 
@@ -163,6 +167,46 @@ The same runnable example is in [examples/python_workflow.py](examples/python_wo
 An action receives an `ActionContext` containing the workflow input, its validated step
 definition, dependency outputs, workflow name, and current attempt number. Handlers run
 with the privileges of the Python process; only register trusted code.
+
+## Run blocking tools in bounded subprocesses
+
+Use `subprocess_action` when a trusted command-line tool, legacy program, or blocking Python
+worker needs an operating-system process boundary:
+
+```python
+import sys
+from pathlib import Path
+
+from samsarix_orchestration import WorkflowRunner, subprocess_action
+
+worker = subprocess_action(
+    (sys.executable, "-I", str(Path("worker.py").resolve())),
+    environment={"APPLICATION_MODE": "production"},
+)
+runner = WorkflowRunner({"external-tool": worker})
+```
+
+The executable path must be absolute and is invoked directly—never through a shell. For
+each attempt the child reads one UTF-8 JSON envelope from stdin and writes exactly one
+finite JSON value to stdout. The version-1 envelope includes workflow/run/step identity,
+parameters, input, dependency outputs, attempt, and idempotency key; compensation calls
+also include the original forward output. It deliberately omits approval prompts and
+reviewer metadata.
+
+Input, stdout, and stderr are independently bounded. Nonzero exits become ordinary failed
+attempts. Stderr is excluded from errors by default because reports and checkpoints may
+persist error messages; `expose_stderr=True` is an explicit debugging/privacy decision.
+The child receives only explicit environment entries by default, plus a small Windows
+platform allowlist required to start normal programs. Set `inherit_environment=True` only
+when the child is authorized to receive all parent environment variables.
+
+When a workflow timeout or caller cancellation arrives, Samsarix terminates the direct
+child, waits for a bounded grace period, then kills it if necessary before propagating
+cancellation. This fixes the lifecycle problem of uninterruptible worker threads; it does
+not sandbox filesystem/network access, kill arbitrary descendant processes, or make an
+external side effect exactly once. Pass the protocol idempotency key to effect destinations.
+The runnable [subprocess pipeline](examples/subprocess_pipeline.py) is one file that acts as
+both orchestrator and isolated worker.
 
 ## Observe progress without exposing payloads
 
@@ -363,17 +407,20 @@ removed from the active tree and remain recoverable from Git revision `6e10c5b`.
 
 ## Security, privacy, and cost
 
-The supported runtime performs no network requests, reads no environment variables,
-loads no dynamic modules from workflow data, and executes no workflow strings as code.
+The supported runtime performs no network requests, loads no dynamic modules from workflow
+data, and executes no workflow strings as code. Subprocess environment access follows the
+host application's explicit `subprocess_action` policy; the built-in CLI path does not use
+that adapter.
 Workflow JSON selects only action names that the host application explicitly registered.
 Concurrency, step count, timeouts, retries, input size, and output size are bounded.
 Cancellation propagates to running async actions.
 
-Action and compensation handlers are trusted application code and have the full privileges of the Python
-process. Samsarix Orchestration is not a sandbox. A handler that calls a model or external
-API owns its authentication, destination validation, timeout, cancellation, privacy,
-and cost controls. The built-in CLI path has no API or operating cost beyond local
-compute and disk space for explicitly requested reports or checkpoints.
+Action and compensation handlers are trusted application code. In-process handlers have
+the Python process's privileges; subprocess handlers run as the same operating-system user.
+Samsarix Orchestration is not a sandbox. A handler that calls a model or external API owns
+its authentication, destination validation, timeout, cancellation, privacy, and cost
+controls. The built-in CLI path has no API or operating cost beyond local compute and disk
+space for explicitly requested reports or checkpoints.
 
 No telemetry is collected implicitly. Lifecycle events are delivered only to handlers
 the application explicitly registers or when the CLI's `--events` flag is present. Run
