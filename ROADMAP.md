@@ -6,17 +6,19 @@ This roadmap separates four gates: merge, release, publication, and flagship ado
 
 Portfolio role: **reusable library or sdk**. Keep this as a small, independently versioned package. Samsarix Unified should consume it only through a public API adapter; private monorepo imports and copied implementations are out of scope.
 
-Current disposition: Merge as a prerelease-quality foundation after the focused merge gates pass; release remains blocked on the items below.
+Current disposition: the prerelease-quality foundation is merged. Build competitive
+increments behind focused, green pull requests; publication remains a separate owner gate.
 
 ## Stabilize the productized default
 
 - Keep the default branch buildable from a clean checkout and preserve exact-head CI evidence.
 - Keep Samsarix LLC branding, package identity, license metadata, and compatibility aliases internally consistent.
 - Preserve the pre-productization default under a rollback ref before merging; do not delete legacy history.
-- Completed in this pass: a timed-out synchronous handler is not retried concurrently; documentation and regression coverage define the limitation.
-- Next: keep external side effects idempotent and add durable checkpoints only if a real consumer requires them.
-- Review priority: authorize license.
-- Review priority: run CI/wheel/CLI and release only the narrow 0.1 boundary.
+- Completed: a timed-out synchronous handler is not retried concurrently.
+- In progress: bounded local checkpoints restore only digest-matched successful steps and
+  expose stable idempotency keys for effectful handlers.
+- MPL-2.0 licensing and Samsarix LLC ownership are authorized and merged.
+- Next: add lifecycle events, then validate checkpointing with a real package consumer.
 
 ## Release candidate
 
@@ -26,10 +28,11 @@ Current disposition: Merge as a prerelease-quality foundation after the focused 
 
 Current hardening backlog:
 
-- Material BSL-to-MPL relicensing needs owner approval.
-- No durable checkpoints, crash recovery, process isolation, idempotency keys, compensation, human pauses, or distributed workers; docs appropriately call these out, but they limit production use.
+- Local step checkpointing and idempotency keys are implemented; process isolation,
+  compensation, human pauses, distributed workers, and cross-host coordination remain.
 - No release/tag/package-index verification or external user evidence.
-- Differentiation from small custom `asyncio` DAG runners is modest.
+- The current differentiation is bounded, auditable, zero-dependency embedded recovery;
+  lifecycle visibility and a real external consumer are needed to validate that wedge.
 
 ## Samsarix adoption
 

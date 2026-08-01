@@ -13,6 +13,13 @@ filesystem, subprocess, network, model, database, or credential access own
 authentication, authorization, destination controls, cancellation, idempotency,
 privacy, and cost limits at that boundary.
 
+Checkpointing is opt-in and persists successful step outputs as plaintext JSON. The
+bundled directory store hashes run identifiers for filenames, bounds reads and writes,
+validates workflow/input identities, and replaces files atomically. Applications remain
+responsible for directory access controls, encryption, retention, deletion, backups, and
+ensuring only one writer owns a run. Checkpoints are integrity-checked for compatibility,
+not cryptographically authenticated against a malicious local writer.
+
 ## Reporting
 
 Report suspected vulnerabilities through a private GitHub security advisory for

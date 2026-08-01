@@ -7,11 +7,16 @@ New applications should import :mod:`samsarix_orchestration`.
 """
 
 from samsarix_orchestration import (
+    MAX_CHECKPOINT_BYTES,
     MAX_WORKFLOW_BYTES,
     ActionContext,
+    CheckpointStore,
+    InMemoryCheckpointStore,
+    JsonDirectoryCheckpointStore,
     StepResult,
     StepState,
     ValidationIssue,
+    WorkflowCheckpoint,
     WorkflowDefinition,
     WorkflowExecutionError,
     WorkflowRunner,
@@ -23,12 +28,17 @@ from samsarix_orchestration import (
 )
 
 __all__ = [
+    "MAX_CHECKPOINT_BYTES",
     "MAX_WORKFLOW_BYTES",
     "ActionContext",
+    "CheckpointStore",
+    "InMemoryCheckpointStore",
+    "JsonDirectoryCheckpointStore",
     "StepResult",
     "StepState",
     "ValidationIssue",
     "WorkflowDefinition",
+    "WorkflowCheckpoint",
     "WorkflowExecutionError",
     "WorkflowRunResult",
     "WorkflowRunner",

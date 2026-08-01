@@ -144,3 +144,38 @@ def test_actions_parser_and_version(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert legacy_main(["actions"]) == 0
     assert "word_count" in capsys.readouterr().out
+
+
+def test_cli_checkpoint_resume_journey(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "workflow.json"
+    checkpoints = tmp_path / "checkpoints"
+    assert main(["init", str(workflow)]) == 0
+    capsys.readouterr()
+
+    common = [
+        "run",
+        str(workflow),
+        "--checkpoint-dir",
+        str(checkpoints),
+        "--run-id",
+        "demo-run",
+    ]
+    assert main(common) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["run_id"] == "demo-run"
+    assert first["resumed"] is False
+    assert first["restored_steps"] == 0
+
+    assert main(common) == 1
+    assert "already exists" in capsys.readouterr().err
+
+    assert main([*common, "--resume"]) == 0
+    resumed = json.loads(capsys.readouterr().out)
+    assert resumed["resumed"] is True
+    assert resumed["restored_steps"] == 3
+
+    assert main(["run", str(workflow), "--resume"]) == 2
+    assert "--checkpoint-dir" in capsys.readouterr().err
