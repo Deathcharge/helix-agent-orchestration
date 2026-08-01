@@ -56,7 +56,7 @@ def planning_workflow() -> WorkflowDefinition:
 def test_plan_derives_deterministic_waves_and_graph_metadata() -> None:
     plan = build_workflow_plan(planning_workflow())
 
-    assert plan.schema_version == PLAN_SCHEMA_VERSION == 1
+    assert plan.schema_version == PLAN_SCHEMA_VERSION == 2
     assert len(plan.workflow_digest) == 64
     assert plan.roots == ("source",)
     assert plan.leaves == ("publish", "audit")

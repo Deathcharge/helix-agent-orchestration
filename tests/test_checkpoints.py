@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from samsarix_orchestration import (
+    CheckpointPhase,
     InMemoryCheckpointStore,
     JsonDirectoryCheckpointStore,
     StepResult,
@@ -137,7 +138,7 @@ def test_memory_store_returns_isolated_validated_snapshots() -> None:
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        (("version",), 3, "versions 1 and 2"),
+        (("version",), 4, "versions 1, 2, and 3"),
         (("run_id",), "../bad", "run_id"),
         (("workflow_digest",), "bad", "digests"),
         (("saved_at",), 1, "saved_at"),
@@ -188,3 +189,56 @@ def test_step_result_rejects_missing_fields_and_invalid_shapes() -> None:
     data["started_at"] = 1
     with pytest.raises(WorkflowExecutionError, match="start time"):
         StepResult.from_dict(data)
+
+
+def version_three_checkpoint_data() -> dict[str, Any]:
+    data = valid_checkpoint_data()
+    data["version"] = 3
+    data["approvals"] = []
+    data["phase"] = "complete"
+    compensation = dict(data["steps"][0])
+    compensation["action"] = "undo"
+    compensation["output"] = {"undone": True}
+    data["compensations"] = [compensation]
+    return data
+
+
+def test_version_three_checkpoint_round_trip_and_phase_guards() -> None:
+    checkpoint = WorkflowCheckpoint.from_dict(version_three_checkpoint_data())
+    assert checkpoint.phase is CheckpointPhase.COMPLETE
+    assert checkpoint.compensations[0].action == "undo"
+    assert checkpoint.to_dict() == version_three_checkpoint_data()
+
+    for field, value, message in (
+        ("phase", "unknown", "phase"),
+        ("compensations", {}, "JSON arrays"),
+    ):
+        data = version_three_checkpoint_data()
+        data[field] = value
+        with pytest.raises(WorkflowExecutionError, match=message):
+            WorkflowCheckpoint.from_dict(data)
+
+    forward = version_three_checkpoint_data()
+    forward["phase"] = "forward"
+    with pytest.raises(WorkflowExecutionError, match="Forward-phase"):
+        WorkflowCheckpoint.from_dict(forward)
+
+    missing_forward = version_three_checkpoint_data()
+    missing_forward["compensations"][0]["step_id"] = "missing"
+    with pytest.raises(WorkflowExecutionError, match="successful forward"):
+        WorkflowCheckpoint.from_dict(missing_forward)
+
+    running = version_three_checkpoint_data()
+    running["steps"][0]["state"] = "running"
+    with pytest.raises(WorkflowExecutionError, match="non-terminal"):
+        WorkflowCheckpoint.from_dict(running)
+
+
+def test_complete_checkpoint_is_immutable() -> None:
+    store = InMemoryCheckpointStore()
+    complete = WorkflowCheckpoint.from_dict(version_three_checkpoint_data())
+    store.save(complete)
+    changed = version_three_checkpoint_data()
+    changed["saved_at"] = "2026-08-02T00:00:00Z"
+    with pytest.raises(WorkflowExecutionError, match="immutable"):
+        store.save(WorkflowCheckpoint.from_dict(changed))

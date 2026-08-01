@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .actions import builtin_actions
+from .actions import builtin_actions, builtin_compensations
 from .checkpoints import JsonDirectoryCheckpointStore
 from .events import WorkflowEvent
 from .planning import build_workflow_plan
@@ -87,6 +87,34 @@ APPROVAL_EXAMPLE_WORKFLOW: dict[str, Any] = {
         },
     ],
 }
+SAGA_EXAMPLE_WORKFLOW: dict[str, Any] = {
+    "version": 3,
+    "name": "order-saga-rollback",
+    "description": "Create two demo effects, fail, then compensate in reverse order.",
+    "max_concurrency": 2,
+    "steps": [
+        {
+            "id": "reserve",
+            "agent": "inventory",
+            "action": "echo",
+            "parameters": {"value": {"reservation": "demo-42"}},
+            "compensation": {"action": "compensate"},
+        },
+        {
+            "id": "charge",
+            "agent": "billing",
+            "action": "collect",
+            "dependencies": ["reserve"],
+            "compensation": {"action": "compensate", "retries": 2},
+        },
+        {
+            "id": "notify",
+            "agent": "delivery",
+            "action": "fail",
+            "dependencies": ["charge"],
+        },
+    ],
+}
 
 
 def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentParser:
@@ -107,10 +135,16 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
         action="store_true",
         help="Explicitly replace an existing file.",
     )
-    init_parser.add_argument(
+    example_group = init_parser.add_mutually_exclusive_group()
+    example_group.add_argument(
         "--approval",
         action="store_true",
         help="Generate a schema-v2 workflow with a pre-action approval gate.",
+    )
+    example_group.add_argument(
+        "--saga",
+        action="store_true",
+        help="Generate a schema-v3 workflow that demonstrates compensating actions.",
     )
 
     validate_parser = subparsers.add_parser(
@@ -233,7 +267,13 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
         if args.command == "init":
             _write_json(
                 args.path,
-                APPROVAL_EXAMPLE_WORKFLOW if args.approval else EXAMPLE_WORKFLOW,
+                (
+                    SAGA_EXAMPLE_WORKFLOW
+                    if args.saga
+                    else APPROVAL_EXAMPLE_WORKFLOW
+                    if args.approval
+                    else EXAMPLE_WORKFLOW
+                ),
                 overwrite=args.force,
             )
             print(f"Created {args.path}")
@@ -321,6 +361,7 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
             result = asyncio.run(
                 WorkflowRunner(
                     builtin_actions(),
+                    compensations=builtin_compensations(),
                     event_handlers=(_print_event,) if args.events else (),
                 ).run(
                     workflow,
@@ -452,7 +493,7 @@ def _privacy_safe_checkpoint(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:
         "workflow_digest": checkpoint.workflow_digest,
         "input_digest": checkpoint.input_digest,
         "saved_at": checkpoint.saved_at,
-        "successful_steps": len(checkpoint.steps),
+        "successful_steps": sum(step.state.value == "succeeded" for step in checkpoint.steps),
         "steps": [
             {
                 "step_id": step.step_id,
@@ -479,6 +520,22 @@ def _privacy_safe_checkpoint(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:
                 "decided_at": approval.decided_at,
             }
             for approval in checkpoint.approvals
+        ]
+    if checkpoint.version >= 3:
+        value["phase"] = checkpoint.phase.value
+        value["successful_compensations"] = len(checkpoint.compensations)
+        value["compensations"] = [
+            {
+                "step_id": result.step_id,
+                "agent": result.agent,
+                "action": result.action,
+                "state": result.state.value,
+                "attempts": result.attempts,
+                "started_at": result.started_at,
+                "finished_at": result.finished_at,
+                "duration_ms": result.duration_ms,
+            }
+            for result in checkpoint.compensations
         ]
     return value
 

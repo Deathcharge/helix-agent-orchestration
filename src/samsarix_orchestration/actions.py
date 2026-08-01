@@ -8,7 +8,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .runtime import ActionContext, ActionHandler
+from .runtime import (
+    ActionContext,
+    ActionHandler,
+    CompensationContext,
+    CompensationHandler,
+)
 
 
 def builtin_actions() -> Mapping[str, ActionHandler]:
@@ -16,9 +21,15 @@ def builtin_actions() -> Mapping[str, ActionHandler]:
     return {
         "collect": collect,
         "echo": echo,
+        "fail": fail,
         "uppercase": uppercase,
         "word_count": word_count,
     }
+
+
+def builtin_compensations() -> Mapping[str, CompensationHandler]:
+    """Return provider-free compensators used by the CLI Saga example."""
+    return {"compensate": compensate}
 
 
 def echo(context: ActionContext) -> Any:
@@ -47,6 +58,19 @@ def collect(context: ActionContext) -> dict[str, Any]:
     return dict(context.dependencies)
 
 
+def fail(_context: ActionContext) -> None:
+    """Fail intentionally so local examples can exercise recovery behavior."""
+    raise RuntimeError("Intentional failure requested by workflow.")
+
+
+def compensate(context: CompensationContext) -> dict[str, str]:
+    """Return non-sensitive evidence that a demo effect was compensated."""
+    return {
+        "step_id": context.step.id,
+        "idempotency_key": context.idempotency_key,
+    }
+
+
 def _source_value(context: ActionContext) -> Any:
     if "value" in context.step.parameters:
         return context.step.parameters["value"]
@@ -57,3 +81,15 @@ def _source_value(context: ActionContext) -> Any:
     if isinstance(context.workflow_input, dict) and "text" in context.workflow_input:
         return context.workflow_input["text"]
     return context.workflow_input
+
+
+__all__ = [
+    "builtin_actions",
+    "builtin_compensations",
+    "collect",
+    "compensate",
+    "echo",
+    "fail",
+    "uppercase",
+    "word_count",
+]

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .checkpoints import MAX_CHECKPOINT_BYTES
+from .events import StepState
 from .runtime import (
     WorkflowCheckpoint,
     WorkflowExecutionError,
@@ -178,7 +179,7 @@ class SqliteCheckpointStore:
                     validated.workflow_digest,
                     validated.input_digest,
                     validated.saved_at,
-                    len(validated.steps),
+                    sum(result.state is StepState.SUCCEEDED for result in validated.steps),
                     len(encoded),
                     rendered,
                 ),

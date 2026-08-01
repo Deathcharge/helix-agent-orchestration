@@ -49,7 +49,7 @@ class WorkflowSpecError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ApprovalPolicy:
-    """A static pre-action approval barrier for a schema-v2 step."""
+    """A static pre-action approval barrier for a strict schema-v2/v3 step."""
 
     prompt: str
 
