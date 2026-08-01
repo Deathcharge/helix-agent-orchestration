@@ -26,6 +26,21 @@ The SQLite store fits a desktop application, local worker service, or CI host th
 many independent runs and needs transactional listing, inspection, resume, and deletion
 without operating a database server. It deliberately stops at the machine boundary.
 
+### Multi-system business operations with semantic rollback
+
+An embedded order, provisioning, publishing, or account-change flow can reserve one
+resource, create another external effect, and then fail later. Schema-v3 compensating
+actions provide an orchestrated Saga: completed effects reverse in dependency-safe order,
+successful reversals survive interruption, and failed reversals block unsafe prerequisite
+undo until resume. The provider-free `init --saga` CLI workflow proves the complete local
+failure, compensation, inspection, and event journey.
+
+This fits operations where the application can define meaningful idempotent compensators,
+such as releasing a reservation or issuing a refund. It does not make irreversible actions
+transactional, erase external observation, or provide exactly-once delivery. A successful
+compensation report means the registered reverse handlers completed—not that the original
+workflow succeeded or that every real-world consequence disappeared.
+
 ### Local automation with expensive intermediate artifacts
 
 Build, media, research, or compliance tooling can persist successful JSON metadata and
@@ -71,6 +86,9 @@ claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
 
 - Delivery is at-least-once around external effects. Targets must support idempotency or
   handlers must deduplicate using `ActionContext.idempotency_key`.
+- Compensation is also at least once. Reverse handlers must deduplicate with
+  `CompensationContext.idempotency_key`, and applications must define what partial or
+  impossible reversal means for their domain.
 - JSON checkpointing restores successful step outputs, not Python stack frames.
 - The bundled file store needs application-owned writer coordination. The SQLite store
   serializes same-host writers and rejects divergent same-run state, but neither store is
@@ -108,7 +126,8 @@ provider, database server, account, or third-party runtime dependency.
    contract.
 3. Completed: a SQLite store with transactional single-host concurrency and safe run
    inspection.
-4. A published package with signed provenance and a third-party adoption signal.
+4. Completed: schema-v3 durable orchestrated Saga compensation and local CLI evidence.
+5. A published package with signed provenance and a third-party adoption signal.
 
 Research reviewed 2026-08-01. Product claims in the README remain limited to behavior
 verified in this repository.

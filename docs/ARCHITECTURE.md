@@ -53,9 +53,13 @@ removed from the working tree and remain available in Git history.
 11. `build_workflow_plan` derives dependency waves and visualization metadata solely from
     the validated definition. It never resolves actions, reads run input, or contacts a
     renderer; Mermaid output is deterministic source text with internal node identifiers.
+12. Schema-v3 failures and approval rejections transition a durable checkpoint to
+    `compensating` before reverse handlers start. Successful effects are reversed in
+    dependency-safe waves; completed reversals persist and are skipped on resume.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
-the host application's explicit action registry and configuration.
+the host application's explicit forward-action registry, compensation registry, and
+configuration.
 
 ## Trust boundaries
 
@@ -64,6 +68,8 @@ the host application's explicit action registry and configuration.
   registry supplied by the host application.
 - Registered handlers are trusted code with the process's full filesystem, network,
   environment, and subprocess privileges. The runtime is not an isolation boundary.
+- Compensation names resolve only through a separate host-supplied registry. Workflow
+  data cannot turn a forward action into an implicitly trusted compensator.
 - Dependency outputs remain in memory and are passed only to declared dependants. They
   must be finite JSON and are limited to 1 MiB per step by default.
 - The CLI writes only explicit target paths. Existing files require explicit force
@@ -102,6 +108,10 @@ the host application's explicit action registry and configuration.
 - Checkpointing is at-least-once. A crash between an external effect and checkpoint commit
   can repeat the handler; the stable `run-id:step-id` idempotency key lets the destination
   deduplicate that effect.
+- Compensation has the same at-least-once boundary and uses the stable
+  `run-id:step-id:compensate` key. It is semantic repair supplied by the application, not
+  an ACID rollback guarantee. Failed compensation halts earlier prerequisite reversal;
+  cancellation or process loss leaves the durable phase resumable.
 - Approval is at-most-one-decision per request. Requests bind the exact run, workflow,
   input, gated step, and dependency outputs. All bundled stores enforce monotonic approval
   records; SQLite serializes competing decisions in the same transaction as the checkpoint.
@@ -146,3 +156,9 @@ Prefect while retaining the zero-runtime-dependency boundary:
 
 - https://docs.langchain.com/oss/python/langgraph/use-graph-api#visualize-your-graph
 - https://docs.prefect.io/v3/api-ref/python/prefect-flows#prefect.flows.Flow.visualize
+
+Compensation follows the orchestrated Saga and transaction-rollback principles documented
+by AWS and Prefect while retaining explicit handlers and local persistence:
+
+- https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html
+- https://docs.prefect.io/v3/advanced/transactions

@@ -26,8 +26,8 @@ per logical run. SQLite creates `-wal` and `-shm` sidecars during use; protect a
 them consistently with the database. Neither store cryptographically authenticates data
 against a malicious local writer.
 
-Approval gates are available only in strict workflow schema version 2. Older runtimes
-reject version 2, preventing them from silently ignoring a gate. A pending gate persists
+Approval gates are available in strict workflow schema versions 2 and 3. Older runtimes
+reject those versions, preventing them from silently ignoring a gate. A pending gate persists
 before returning `paused`; the full ready batch remains behind the barrier. An approve or
 reject decision persists before the runtime invokes or rejects the gated step. Store
 monotonicity prevents normal callers from removing a request or reversing a decided one.
@@ -47,10 +47,25 @@ events omit prompts, labels, reasons, and outputs but retain request/run/step id
 and decision kinds. Protect all of these according to their classification and avoid
 placing credentials in prompts or reasons.
 
+Compensating actions require strict schema version 3, an explicit run ID, durable
+checkpoint storage, and a separately registered handler. The checkpoint enters the
+`compensating` phase before a reverse handler starts. Successful compensation outputs are
+plaintext checkpoint data subject to the same access, retention, size, and integrity risks
+as forward outputs. Default events omit both kinds of outputs.
+
+Compensation is at least once. A crash, cancellation, synchronous timeout, or event-delivery
+failure can occur after the external reverse effect but before its success checkpoint.
+Handlers must use `CompensationContext.idempotency_key` at the destination or otherwise
+deduplicate. Python cannot terminate timed-out synchronous compensators; Samsarix therefore
+does not retry them in the same invocation and will not compensate their prerequisites.
+Applications must design and test the semantic limits of every undo operation—some effects
+are irreversible, externally observed, or only partially repairable.
+
 Static planning revalidates workflow data but does not import handlers or execute actions.
 Text, JSON, and Mermaid plans expose workflow, step, action, agent, and dependency
 identifiers as operational metadata; text and JSON also expose the canonical workflow
-digest. Parameters and approval prompts are omitted. Mermaid uses generated node IDs and
+digest. Compensation action identifiers are also exposed. Parameters and approval prompts
+are omitted. Mermaid uses generated node IDs and
 emits source only; the caller chooses and trusts any renderer.
 
 Lifecycle observation is opt-in. Events exclude workflow inputs, parameters,

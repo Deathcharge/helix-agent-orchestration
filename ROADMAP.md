@@ -28,6 +28,9 @@ increments behind focused, green pull requests; publication remains a separate o
   pause all ready work, and reject without invoking the gated handler.
 - Completed: deterministic offline workflow plans expose dependency waves, approval
   barriers, machine-readable metadata, and Mermaid source without a hosted UI.
+- Completed: strict schema-v3 compensating actions reverse successful effects in durable
+  dependency-safe waves, resume unfinished rollback, and report compensation separately
+  from the failed or rejected business workflow.
 
 ## Release candidate
 
@@ -38,9 +41,9 @@ increments behind focused, green pull requests; publication remains a separate o
 
 Current hardening backlog:
 
-- Local JSON and same-host SQLite checkpointing, idempotency keys, and static pre-action
-  approvals are implemented; process isolation, compensation, dynamic mid-action pauses,
-  distributed workers, and cross-host coordination remain.
+- Local JSON and same-host SQLite checkpointing, idempotency keys, static pre-action
+  approvals, and orchestrated Saga compensation are implemented; process isolation,
+  dynamic mid-action pauses, distributed workers, and cross-host coordination remain.
 - No release/tag/package-index verification or third-party user evidence.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
   a separate installed consumer now validates that wedge across a package boundary.

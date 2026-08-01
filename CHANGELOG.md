@@ -19,6 +19,9 @@ Initial honest standalone release candidate.
   privacy-minimized CLI JSON Lines progress output.
 - Side-effect-free workflow plans with dependency waves, approval-barrier markers, stable
   JSON metadata, and offline Mermaid source export.
+- Strict schema-v3 compensating actions with reverse dependency waves, independent retry
+  policy, durable phase recovery, separate outcomes, lifecycle events, and a runnable
+  provider-free Saga rollback example.
 - Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.

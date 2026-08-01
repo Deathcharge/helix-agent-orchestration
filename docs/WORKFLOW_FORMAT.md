@@ -1,6 +1,6 @@
 # Workflow format
 
-Workflow files are UTF-8 JSON objects using schema version 1 or 2.
+Workflow files are UTF-8 JSON objects using schema version 1, 2, or 3.
 
 ```json
 {
@@ -33,7 +33,7 @@ Workflow files are UTF-8 JSON objects using schema version 1 or 2.
 
 | Field | Required | Constraints |
 | --- | --- | --- |
-| `version` | No | Defaults to `1`; versions `1` and `2` are accepted. |
+| `version` | No | Defaults to `1`; versions `1`, `2`, and `3` are accepted. |
 | `name` | Yes | Non-empty string, at most 128 characters. |
 | `description` | No | String, at most 2,000 characters. |
 | `max_concurrency` | No | Integer from 1 to 64; defaults to 4. |
@@ -51,15 +51,18 @@ Workflow files are UTF-8 JSON objects using schema version 1 or 2.
 | `timeout_seconds` | No | Greater than 0 and at most 3,600; defaults to 30. |
 | `retries` | No | Integer from 0 to 10; defaults to 0. |
 | `retry_delay_seconds` | No | Number from 0 to 300; defaults to 0. |
-| `approval` | Version 2 only | `{"prompt": "..."}`; non-empty prompt, at most 500 characters. |
+| `approval` | Version 2 or 3 | `{"prompt": "..."}`; non-empty prompt, at most 500 characters. |
+| `compensation` | Version 3 only | Named reverse action with independently bounded timeout and retry policy. |
 
 Unknown top-level or step fields are ignored in schema version 1 so metadata producers
 can add annotations without changing execution. They are never passed to action
 handlers.
 
-Schema version 2 rejects every unknown workflow, step, and approval field. This strictness
+Schema versions 2 and 3 reject every unknown workflow, step, approval, and compensation
+field. This strictness
 is intentional: a misspelled or future safety field cannot silently disappear. Approval
-gates require an explicit `"version": 2`; version 1 rejects the `approval` field.
+gates require version 2 or 3; compensating actions require version 3. Earlier versions
+reject rather than ignore those safety policies.
 
 An approval gate pauses the complete ready batch before any action handler starts. It
 requires an explicit run ID and checkpoint store. The request binds the step to canonical
@@ -67,6 +70,24 @@ workflow, input, and dependency-output digests. A durable `approve` decision per
 handler to start on resume. A `reject` decision creates a `rejected` step result without an
 attempt and blocks remaining work. Approval is static and pre-action; handlers cannot
 pause partway through their own code.
+
+A compensation object has this shape:
+
+```json
+{
+  "action": "refund-payment",
+  "timeout_seconds": 30,
+  "retries": 2,
+  "retry_delay_seconds": 1
+}
+```
+
+`action` uses the normal identifier syntax. Timeout and retry bounds are identical to a
+forward step but independent from it. The host registers compensators in the runner's
+separate `compensations` mapping; registering a forward action never implicitly authorizes
+an undo action. After failure or rejection, successful compensable steps run in reverse
+dependency order. Independent steps at one reverse depth may run concurrently. If any
+compensation in a wave fails, its prerequisites remain untouched until a later resume.
 
 ## Action contract
 
@@ -83,14 +104,20 @@ object, and `context.attempt` starts at 1. `context.run_id` identifies the logic
 For a gated step, `context.approval` is the durable approved record; it is `None` for an
 ungated step.
 
+A compensator receives `CompensationContext`: the original step and successful output,
+workflow input, dependency outputs, attempt number, run ID, and stable
+`run-id:step-id:compensate` idempotency key. Compensation outputs follow the same finite-JSON
+and size bounds as forward results.
+
 Results must be finite JSON and fit within the runner's output bound. An exception or
 timeout consumes an attempt. When all attempts fail, the step is `failed`; dependent
 steps become `blocked`. A synchronous-handler timeout ends the step immediately without
 using configured retries because Python cannot stop the worker thread and a retry could
 overlap the same external side effect.
 
-The CLI exposes only `collect`, `echo`, `uppercase`, and `word_count`. Applications
-register real actions through `WorkflowRunner`; workflow files cannot import them.
+The CLI exposes provider-free `collect`, `echo`, `fail`, `uppercase`, and `word_count`
+forward actions plus the `compensate` handler used by `init --saga`. Applications register
+real handlers through `WorkflowRunner`; workflow files cannot import them.
 
 ## Checkpoint and report contract
 
@@ -106,14 +133,22 @@ Within each store's writer-coordination contract, saves reject removed requests,
 request identity, decision reversal, successful-step regression, and divergence.
 Checkpoints use the same version as their workflow.
 
+Checkpoint version 3 adds a strict `phase` (`forward`, `compensating`, or `complete`) and
+ordered successful compensation results. Once compensation begins, terminal forward
+results are retained so resume continues rollback without replaying forward actions.
+Failed compensation attempts remain retryable and are not recorded as completed. A
+`complete` checkpoint is immutable.
+
 Run reports add the following fields:
 
 | Field | Meaning |
 | --- | --- |
 | `resumed` | Whether this invocation requested checkpoint restoration. |
-| `restored_steps` | Number of successful results reused without invoking their handlers. |
-| `schema_version` | Present for version-2 reports. |
-| `approvals` | Ordered durable approval records in version-2 reports. |
+| `restored_steps` | Forward results restored without invoking handlers; only successful results in v1/v2, terminal results during v3 compensation. |
+| `schema_version` | Present for version-2 and version-3 reports. |
+| `approvals` | Ordered durable approval records in version-2 and version-3 reports. |
+| `compensation_status` | Version-3 reverse outcome: `not_requested`, `succeeded`, or `failed`. |
+| `compensations` | Version-3 compensation results, distinct from forward step results. |
 
 Invocation status can be `paused` while requests await decisions or `rejected` after a
 negative decision, in addition to `succeeded` and `failed`. A paused result contains only
@@ -144,7 +179,7 @@ exposes the same JSON representation as JSON Lines on stderr with `run --events`
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | Event schema version; `1` or `2`. |
+| `schema_version` | Event schema version; `1`, `2`, or `3`. |
 | `sequence` | Monotonic per-invocation delivery order. |
 | `kind` | Run, step-attempt, retry, restore, checkpoint, or terminal transition. |
 | `run_id`, `workflow` | Logical run and workflow identifiers. |
@@ -164,6 +199,10 @@ Version 2 adds `approval_requested`, `approval_recorded`, `step_rejected`, `run_
 and `run_rejected`. Approval events expose request IDs and decision kinds but exclude
 prompts, reviewer identity, reasons, input, parameters, and dependency outputs.
 
+Version 3 adds `compensation_started`, `compensation_retry_scheduled`,
+`compensation_succeeded`, `compensation_failed`, `compensation_cancelled`, and
+`compensation_restored`. They expose no original or compensation outputs.
+
 Events never contain workflow input, step parameters, output or dependency values, error
 messages, or idempotency keys. Identifiers and error type names remain visible. Delivery
 is in-process, ordered, and backpressured rather than a durable log. A handler exception
@@ -173,9 +212,9 @@ raises `EventDeliveryError`; already completed external effects are not rolled b
 
 `build_workflow_plan(workflow)` and `samsarix-orchestration plan` revalidate the definition
 and derive a plan without resolving action handlers or executing code. Plan schema version
-1 contains the workflow schema version and canonical digest, ordered step inventory,
+2 contains the workflow schema version and canonical digest, ordered step inventory,
 dependency/dependent edges, roots, leaves, maximum concurrency, deterministic dependency
-waves, approval flags, and one longest dependency chain. The digest uses the same
+waves, approval flags, compensation actions, and one longest dependency chain. The digest uses the same
 canonical JSON contract as checkpoints. A wave's `approval_barrier` is true when any step
 in that wave has an approval policy.
 
