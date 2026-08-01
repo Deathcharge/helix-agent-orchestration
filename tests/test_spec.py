@@ -10,6 +10,7 @@ import pytest
 
 from samsarix_orchestration import (
     ApprovalPolicy,
+    CompensationPolicy,
     WorkflowDefinition,
     WorkflowSpecError,
     WorkflowStep,
@@ -75,7 +76,7 @@ def test_workflow_round_trip() -> None:
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     [
-        (lambda data: data.update(version=3), "version"),
+        (lambda data: data.update(version=4), "version"),
         (lambda data: data.update(name=""), "name"),
         (lambda data: data.update(description="x" * 2_001), "description"),
         (lambda data: data.update(max_concurrency=0), "max_concurrency"),
@@ -180,6 +181,65 @@ def test_version_two_approval_round_trip_is_strict() -> None:
     assert workflow.to_dict()["steps"][1]["approval"] == {
         "prompt": "Publish this validated result?"
     }
+
+
+def test_version_three_compensation_round_trip_is_strict() -> None:
+    data = valid_data()
+    data["version"] = 3
+    steps = data["steps"]
+    assert isinstance(steps, list)
+    steps[0]["compensation"] = {
+        "action": "delete-record",
+        "timeout_seconds": 12,
+        "retries": 2,
+        "retry_delay_seconds": 0.5,
+    }
+
+    workflow = WorkflowDefinition.from_dict(data)
+
+    assert workflow.version == 3
+    assert workflow.steps[0].compensation == CompensationPolicy(
+        action="delete-record",
+        timeout_seconds=12.0,
+        retries=2,
+        retry_delay_seconds=0.5,
+    )
+    assert workflow.to_dict()["steps"][0]["compensation"] == {
+        "action": "delete-record",
+        "timeout_seconds": 12.0,
+        "retries": 2,
+        "retry_delay_seconds": 0.5,
+    }
+
+
+@pytest.mark.parametrize(
+    ("version", "compensation", "expected_code"),
+    [
+        (2, {"action": "undo"}, "compensation_version"),
+        (3, "undo", "compensation_type"),
+        (3, {}, "compensation_action"),
+        (3, {"action": "bad action"}, "compensation_action"),
+        (3, {"action": "undo", "timeout_seconds": 0}, "compensation_timeout"),
+        (3, {"action": "undo", "retries": 11}, "compensation_retries"),
+        (
+            3,
+            {"action": "undo", "retry_delay_seconds": -1},
+            "compensation_retry_delay",
+        ),
+        (3, {"action": "undo", "future": True}, "unknown_field"),
+    ],
+)
+def test_compensation_validation_fails_closed(
+    version: int,
+    compensation: object,
+    expected_code: str,
+) -> None:
+    data = valid_data()
+    data["version"] = version
+    steps = data["steps"]
+    assert isinstance(steps, list)
+    steps[0]["compensation"] = compensation
+    assert expected_code in {issue.code for issue in validate_workflow_data(data)}
 
 
 @pytest.mark.parametrize(
