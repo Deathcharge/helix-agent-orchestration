@@ -27,16 +27,28 @@ from .spec import (
     WorkflowStep,
     load_workflow,
 )
+from .sqlite_store import (
+    MAX_LIST_LIMIT,
+    SQLITE_APPLICATION_ID,
+    SQLITE_SCHEMA_VERSION,
+    CheckpointSummary,
+    SqliteCheckpointStore,
+)
 
 __all__ = [
     "MAX_CHECKPOINT_BYTES",
+    "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
     "ActionContext",
+    "CheckpointSummary",
     "CheckpointStore",
     "EventDeliveryError",
     "EventHandler",
     "InMemoryCheckpointStore",
     "JsonDirectoryCheckpointStore",
+    "SQLITE_APPLICATION_ID",
+    "SQLITE_SCHEMA_VERSION",
+    "SqliteCheckpointStore",
     "StepResult",
     "StepState",
     "ValidationIssue",

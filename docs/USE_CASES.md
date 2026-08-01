@@ -22,6 +22,10 @@ Machine-readable reports provide evidence for support tooling without requiring 
 control plane. Ordered lifecycle events can feed application-owned logs, counters, or a
 desktop progress view without including record payloads.
 
+The SQLite store fits a desktop application, local worker service, or CI host that manages
+many independent runs and needs transactional listing, inspection, resume, and deletion
+without operating a database server. It deliberately stops at the machine boundary.
+
 ### Local automation with expensive intermediate artifacts
 
 Build, media, research, or compliance tooling can persist successful JSON metadata and
@@ -48,8 +52,9 @@ claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
 - Delivery is at-least-once around external effects. Targets must support idempotency or
   handlers must deduplicate using `ActionContext.idempotency_key`.
 - JSON checkpointing restores successful step outputs, not Python stack frames.
-- The bundled file store is single-writer and local. It is not a lock service, queue, or
-  distributed scheduler.
+- The bundled file store needs application-owned writer coordination. The SQLite store
+  serializes same-host writers and rejects divergent same-run state, but neither store is
+  a cross-host lock service, queue, or distributed scheduler.
 - Checkpoints contain plaintext inputs only as a digest, but successful outputs are stored
   in plaintext. Applications own encryption, access control, retention, and deletion.
 - Registered actions are trusted code; checkpointing does not create a sandbox.
@@ -72,13 +77,14 @@ plane. Current products make those trade-offs explicit:
 
 Samsarix should not imitate those platforms feature for feature. Its competitive advantage
 is a narrow, inspectable contract for embedded workflows with no mandatory service,
-provider, database, account, or runtime dependency.
+provider, database server, account, or third-party runtime dependency.
 
 ## Next evidence-driven milestones
 
 1. Validate lifecycle events in a desktop progress view.
 2. A versioned approval/interrupt primitive built on the checkpoint contract.
-3. A SQLite store with transactional single-host concurrency and run inspection.
+3. Completed: a SQLite store with transactional single-host concurrency and safe run
+   inspection.
 4. A published package with signed provenance and a third-party adoption signal.
 
 Research reviewed 2026-08-01. Product claims in the README remain limited to behavior

@@ -21,7 +21,8 @@ not yet been published to a package index.
 - Explicit sync or async Python action registration.
 - Concurrent execution bounded to 1–64 in-flight actions per workflow.
 - Per-step timeouts, 0–10 retries, bounded retry delays, and fail-fast behavior.
-- Opt-in atomic JSON checkpoints that resume without repeating verified successful steps.
+- Opt-in atomic JSON or transactional SQLite checkpoints that resume without repeating
+  verified successful steps.
 - Stable per-step idempotency keys for safely designed external side effects.
 - Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
 - A separately installed consumer proving resume, idempotency, and event contracts across
@@ -62,8 +63,12 @@ samsarix-orchestration init PATH [--force]
 samsarix-orchestration validate PATH [--json]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
                                  [--output PATH] [--force-output]
-                                 [--checkpoint-dir PATH] [--run-id ID] [--resume]
+                                 [--checkpoint-dir PATH | --checkpoint-db PATH]
+                                 [--run-id ID] [--resume]
                                  [--events]
+samsarix-orchestration runs list DATABASE [--limit N] [--json]
+samsarix-orchestration runs show DATABASE RUN_ID [--include-outputs]
+samsarix-orchestration runs delete DATABASE RUN_ID --confirm RUN_ID
 ```
 
 Exit codes are stable:
@@ -189,6 +194,26 @@ window without duplicating a receipt. See [real use cases](docs/USE_CASES.md) fo
 non-fit guidance and [external consumer evidence](docs/CONSUMER_EVIDENCE.md) for the
 independently installed redaction pipeline.
 
+For multiple runs in one trusted host, use the standard-library SQLite store:
+
+```python
+from samsarix_orchestration import SqliteCheckpointStore
+
+store = SqliteCheckpointStore(".samsarix-runs/runs.db")
+```
+
+It uses short-lived connections, bounded lock waits, `BEGIN IMMEDIATE` writes, WAL mode,
+and full synchronous durability. Distinct run IDs may be saved from multiple threads or
+processes on the same machine. SQLite serializes writers; competing divergent saves for
+one run fail closed. It is not a cross-host coordinator and must live on a local filesystem,
+not a network filesystem. Run summaries exclude outputs, and `runs show` also omits outputs
+unless `--include-outputs` is explicit. Deletion requires the run ID twice.
+
+The [SQLite batch example](examples/sqlite_batch_runs.py) executes and inspects several
+independent runs. SQLite's upstream documentation describes the
+[WAL concurrency model](https://www.sqlite.org/wal.html) and
+[runtime pragmas](https://www.sqlite.org/pragma.html) used here.
+
 ## Development
 
 ```bash
@@ -235,14 +260,14 @@ Action handlers are trusted application code and have the full privileges of the
 process. Samsarix Orchestration is not a sandbox. A handler that calls a model or external
 API owns its authentication, destination validation, timeout, cancellation, privacy,
 and cost controls. The built-in CLI path has no API or operating cost beyond local
-compute and disk space for an explicitly requested report.
+compute and disk space for explicitly requested reports or checkpoints.
 
 No telemetry is collected implicitly. Lifecycle events are delivered only to handlers
 the application explicitly registers or when the CLI's `--events` flag is present. Run
 inputs and outputs stay in memory unless `--output` is
-provided or checkpointing is explicitly enabled. Checkpoints contain successful step
-outputs in plaintext JSON; the caller controls their directory permissions, encryption,
-retention, and deletion.
+provided or checkpointing is explicitly enabled. Both stores contain successful step
+outputs in plaintext; SQLite may also create `-wal` and `-shm` sidecars. The caller controls
+filesystem permissions, encryption, backups, retention, and deletion.
 
 ## Project and license status
 

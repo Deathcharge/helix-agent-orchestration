@@ -22,6 +22,8 @@ increments behind focused, green pull requests; publication remains a separate o
 - MPL-2.0 licensing and Samsarix LLC ownership are authorized and merged.
 - Completed: an exact-pin external consumer validates checkpoints, lifecycle events,
   idempotent publishing, payload privacy, and measurable avoided redaction work.
+- Completed: transactional same-host SQLite checkpoints add concurrent multi-run storage,
+  fail-closed monotonic updates, privacy-safe inspection, and explicit retention deletion.
 
 ## Release candidate
 
@@ -32,8 +34,9 @@ increments behind focused, green pull requests; publication remains a separate o
 
 Current hardening backlog:
 
-- Local step checkpointing and idempotency keys are implemented; process isolation,
-  compensation, human pauses, distributed workers, and cross-host coordination remain.
+- Local JSON and same-host SQLite checkpointing plus idempotency keys are implemented;
+  process isolation, compensation, human pauses, distributed workers, and cross-host
+  coordination remain.
 - No release/tag/package-index verification or third-party user evidence.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
   a separate installed consumer now validates that wedge across a package boundary.

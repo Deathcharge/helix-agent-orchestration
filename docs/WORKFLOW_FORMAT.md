@@ -95,6 +95,17 @@ Run reports add two fields:
 The JSON directory store bounds each file to 16 MiB by default and uses a SHA-256 hash of
 the run id as its filename. The run id remains inside the auditable JSON document.
 
+The SQLite store uses the same checkpoint document and default 16 MiB per-checkpoint bound.
+Its payload-free summary contract contains `run_id`, both identity digests, `saved_at`,
+`successful_steps`, and `checkpoint_bytes`. Summary queries fetch no checkpoint JSON.
+CLI `runs show` loads a validated checkpoint but omits outputs by default; the explicit
+`--include-outputs` option reveals the complete stored document. `runs delete` requires
+an exact repeated run ID confirmation. There is no implicit retention or bulk deletion.
+
+SQLite databases are identified with application id `0x53584f52` and schema version 1.
+Existing unowned databases, changed schemas, invalid identities, corrupt JSON, inconsistent
+lengths, and checkpoints above the configured bound fail closed.
+
 ## Lifecycle event contract
 
 `WorkflowRunner(..., event_handlers=(...))` emits schema version 1 events. Each run starts

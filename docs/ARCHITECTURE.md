@@ -12,6 +12,7 @@ samsarix_orchestration
 ├── runtime.py    bounded dependency-aware execution
 ├── actions.py    deterministic CLI demonstration actions
 ├── checkpoints.py bounded in-memory and atomic JSON checkpoint stores
+├── sqlite_store.py transactional same-host SQLite checkpoints and inspection
 ├── events.py     versioned privacy-minimized lifecycle event contract
 ├── cli.py        local file/input/output boundary and exit codes
 └── __main__.py   python -m entry point
@@ -61,8 +62,8 @@ the host application's explicit action registry and configuration.
 - The CLI writes only explicit target paths. Existing files require explicit force
   flags. Forced writes use a same-directory temporary file, flush, `fsync`, and atomic
   replacement.
-- No network, telemetry, credential, database, or provider boundary exists in the
-  supported package. Applications that add one own its policy and operational controls.
+- No network, telemetry, credential, or provider boundary exists in the supported package.
+  SQLite persistence is opt-in, local, and uses only Python's standard library.
 - Lifecycle events omit inputs, parameters, outputs, dependency values, error messages,
   and idempotency keys. They retain run/workflow/step identifiers and exception type names,
   which applications must classify and protect as operational data.
@@ -77,8 +78,17 @@ the host application's explicit action registry and configuration.
   the runner skips configured retries to avoid overlapping the same side effect.
 - Async work reaches a terminal state before the run report is returned. A timed-out sync
   worker may still be exiting in the background, so handlers must bound their own I/O.
-- Checkpoint stores are opt-in and use a single-writer contract. The bundled JSON store
-  writes one bounded file per run with same-directory temporary files and atomic replace.
+- Checkpoint stores are opt-in. The bundled JSON store writes one bounded file per run
+  with same-directory temporary files and atomic replace and requires application-owned
+  writer coordination.
+- The SQLite store owns a versioned schema using SQLite `application_id` and `user_version`.
+  Each operation opens its own connection, bounds lock waiting, validates the schema,
+  and uses WAL plus full synchronous durability. Writes begin with `BEGIN IMMEDIATE`.
+  Distinct same-host runs can progress concurrently, although SQLite permits only one
+  writer at a time. Same-run identity changes, regressions, and divergent successful
+  results are rejected inside the write transaction.
+- SQLite WAL requires all processes to share one host and does not support a network
+  filesystem deployment. Database growth and retention remain operator-managed.
 - Checkpointing is at-least-once. A crash between an external effect and checkpoint commit
   can repeat the handler; the stable `run-id:step-id` idempotency key lets the destination
   deduplicate that effect.
