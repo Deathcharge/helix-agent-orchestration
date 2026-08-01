@@ -142,6 +142,7 @@ def test_actions_parser_and_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert capsys.readouterr().out.splitlines() == [
         "collect",
         "echo",
+        "fail",
         "uppercase",
         "word_count",
     ]
@@ -158,6 +159,52 @@ def test_actions_parser_and_version(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert legacy_main(["actions"]) == 0
     assert "word_count" in capsys.readouterr().out
+
+
+def test_cli_saga_example_runs_and_reports_compensation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "saga.json"
+    database = tmp_path / "sagas.db"
+    assert main(["init", str(workflow), "--saga"]) == 0
+    capsys.readouterr()
+    assert main(["plan", str(workflow), "--format", "json"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["schema_version"] == 2
+    assert plan["workflow_schema_version"] == 3
+    assert plan["compensation_steps"] == ["reserve", "charge"]
+
+    assert (
+        main(
+            [
+                "run",
+                str(workflow),
+                "--checkpoint-db",
+                str(database),
+                "--run-id",
+                "saga-demo",
+                "--events",
+            ]
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report["status"] == "failed"
+    assert report["compensation_status"] == "succeeded"
+    assert [item["step_id"] for item in report["compensations"]] == [
+        "reserve",
+        "charge",
+    ]
+    assert "compensation_succeeded" in captured.err
+
+    assert main(["runs", "show", str(database), "saga-demo"]) == 0
+    safe = json.loads(capsys.readouterr().out)
+    assert safe["phase"] == "complete"
+    assert safe["successful_steps"] == 2
+    assert safe["successful_compensations"] == 2
+    assert all("output" not in item for item in safe["compensations"])
 
 
 def test_cli_checkpoint_resume_journey(

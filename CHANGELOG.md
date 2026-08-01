@@ -19,6 +19,9 @@ Initial honest standalone release candidate.
   privacy-minimized CLI JSON Lines progress output.
 - Side-effect-free workflow plans with dependency waves, approval-barrier markers, stable
   JSON metadata, and offline Mermaid source export.
+- Strict schema-v3 compensating actions with reverse dependency waves, independent retry
+  policy, durable phase recovery, separate outcomes, lifecycle events, and a runnable
+  provider-free Saga rollback example.
 - Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.
@@ -33,6 +36,10 @@ Initial honest standalone release candidate.
 
 ### Changed
 
+- Made first-use SQLite WAL initialization retry transient lock contention so concurrent
+  store instances can safely create and use the same new checkpoint database.
+- Hardened Saga restoration by reapplying output-size bounds to compensations and by
+  making terminal forward failures durable only with the compensation phase transition.
 - Reset the package maturity from an unsupported “production stable” 1.0 claim to an
   explicit 0.1 alpha release candidate.
 - Reduced the supported distribution to the typed `samsarix_orchestration` runtime

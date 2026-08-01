@@ -15,8 +15,8 @@ MAX_WORKFLOW_BYTES = 1_048_576
 MAX_STEPS = 256
 MAX_APPROVAL_PROMPT_CHARACTERS = 500
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_V2_WORKFLOW_FIELDS = {"version", "name", "description", "max_concurrency", "steps"}
-_V2_STEP_FIELDS = {
+_STRICT_WORKFLOW_FIELDS = {"version", "name", "description", "max_concurrency", "steps"}
+_STRICT_STEP_FIELDS = {
     "id",
     "action",
     "agent",
@@ -26,7 +26,28 @@ _V2_STEP_FIELDS = {
     "retries",
     "retry_delay_seconds",
     "approval",
+    "compensation",
 }
+
+
+def _valid_timeout(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and 0 < value <= 3_600
+    )
+
+
+def _valid_retries(value: Any) -> bool:
+    return type(value) is int and 0 <= value <= 10
+
+
+def _valid_retry_delay(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and 0 <= value <= 300
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,13 +69,32 @@ class WorkflowSpecError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ApprovalPolicy:
-    """A static pre-action approval barrier for a schema-v2 step."""
+    """A static pre-action approval barrier for a strict schema-v2/v3 step."""
 
     prompt: str
 
     def to_dict(self) -> dict[str, str]:
         """Return the stable JSON representation."""
         return {"prompt": self.prompt}
+
+
+@dataclass(frozen=True, slots=True)
+class CompensationPolicy:
+    """A schema-v3 action that reverses one successful step's external effect."""
+
+    action: str
+    timeout_seconds: float = 30.0
+    retries: int = 0
+    retry_delay_seconds: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the stable JSON representation."""
+        return {
+            "action": self.action,
+            "timeout_seconds": self.timeout_seconds,
+            "retries": self.retries,
+            "retry_delay_seconds": self.retry_delay_seconds,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +110,7 @@ class WorkflowStep:
     retries: int = 0
     retry_delay_seconds: float = 0.0
     approval: ApprovalPolicy | None = None
+    compensation: CompensationPolicy | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stable JSON representation of this step."""
@@ -85,6 +126,8 @@ class WorkflowStep:
         }
         if self.approval is not None:
             value["approval"] = self.approval.to_dict()
+        if self.compensation is not None:
+            value["compensation"] = self.compensation.to_dict()
         return value
 
 
@@ -126,6 +169,18 @@ class WorkflowDefinition:
                 approval=(
                     ApprovalPolicy(prompt=raw["approval"]["prompt"])
                     if isinstance(raw.get("approval"), dict)
+                    else None
+                ),
+                compensation=(
+                    CompensationPolicy(
+                        action=raw["compensation"]["action"],
+                        timeout_seconds=float(raw["compensation"].get("timeout_seconds", 30.0)),
+                        retries=raw["compensation"].get("retries", 0),
+                        retry_delay_seconds=float(
+                            raw["compensation"].get("retry_delay_seconds", 0.0)
+                        ),
+                    )
+                    if isinstance(raw.get("compensation"), dict)
                     else None
                 ),
             )
@@ -198,14 +253,14 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
         return (ValidationIssue("type", "$", "Workflow must be a JSON object."),)
 
     version = value.get("version", 1)
-    if type(version) is not int or version not in (1, 2):
-        add("version", "$.version", "Only workflow versions 1 and 2 are supported.")
-    if version == 2:
-        for field_name in sorted(value.keys() - _V2_WORKFLOW_FIELDS):
+    if type(version) is not int or version not in (1, 2, 3):
+        add("version", "$.version", "Only workflow versions 1, 2, and 3 are supported.")
+    if version in (2, 3):
+        for field_name in sorted(value.keys() - _STRICT_WORKFLOW_FIELDS):
             add(
                 "unknown_field",
                 f"$.{field_name}",
-                "Unknown fields are not allowed in workflow version 2.",
+                f"Unknown fields are not allowed in workflow version {version}.",
             )
 
     name = value.get("name")
@@ -245,12 +300,12 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
         if not isinstance(step, dict):
             add("step_type", path, "Each step must be a JSON object.")
             continue
-        if version == 2:
-            for field_name in sorted(step.keys() - _V2_STEP_FIELDS):
+        if version in (2, 3):
+            for field_name in sorted(step.keys() - _STRICT_STEP_FIELDS):
                 add(
                     "unknown_field",
                     f"{path}.{field_name}",
-                    "Unknown step fields are not allowed in workflow version 2.",
+                    f"Unknown step fields are not allowed in workflow version {version}.",
                 )
 
         step_id = step.get("id")
@@ -311,12 +366,7 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
                 )
 
         timeout = step.get("timeout_seconds", 30.0)
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or timeout <= 0
-            or timeout > 3_600
-        ):
+        if not _valid_timeout(timeout):
             add(
                 "timeout",
                 f"{path}.timeout_seconds",
@@ -324,16 +374,11 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
             )
 
         retries = step.get("retries", 0)
-        if type(retries) is not int or retries < 0 or retries > 10:
+        if not _valid_retries(retries):
             add("retries", f"{path}.retries", "retries must be an integer from 0 to 10.")
 
         retry_delay = step.get("retry_delay_seconds", 0.0)
-        if (
-            isinstance(retry_delay, bool)
-            or not isinstance(retry_delay, (int, float))
-            or retry_delay < 0
-            or retry_delay > 300
-        ):
+        if not _valid_retry_delay(retry_delay):
             add(
                 "retry_delay",
                 f"{path}.retry_delay_seconds",
@@ -342,11 +387,11 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
 
         if "approval" in step:
             approval = step["approval"]
-            if version != 2:
+            if version not in (2, 3):
                 add(
                     "approval_version",
                     f"{path}.approval",
-                    "Approval gates require workflow version 2.",
+                    "Approval gates require workflow version 2 or 3.",
                 )
             if not isinstance(approval, dict):
                 add(
@@ -372,6 +417,64 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
                         f"{path}.approval.prompt",
                         "Approval prompt must be a non-empty string of at most "
                         f"{MAX_APPROVAL_PROMPT_CHARACTERS} characters.",
+                    )
+
+        if "compensation" in step:
+            compensation = step["compensation"]
+            if version != 3:
+                add(
+                    "compensation_version",
+                    f"{path}.compensation",
+                    "Compensating actions require workflow version 3.",
+                )
+            if not isinstance(compensation, dict):
+                add(
+                    "compensation_type",
+                    f"{path}.compensation",
+                    "Compensation must be a JSON object.",
+                )
+            else:
+                allowed = {
+                    "action",
+                    "timeout_seconds",
+                    "retries",
+                    "retry_delay_seconds",
+                }
+                for field_name in sorted(compensation.keys() - allowed):
+                    add(
+                        "unknown_field",
+                        f"{path}.compensation.{field_name}",
+                        "Unknown compensation fields are not allowed.",
+                    )
+                compensation_action = compensation.get("action")
+                if not isinstance(compensation_action, str) or not _IDENTIFIER.fullmatch(
+                    compensation_action
+                ):
+                    add(
+                        "compensation_action",
+                        f"{path}.compensation.action",
+                        "Compensation action must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.",
+                    )
+                compensation_timeout = compensation.get("timeout_seconds", 30.0)
+                if not _valid_timeout(compensation_timeout):
+                    add(
+                        "compensation_timeout",
+                        f"{path}.compensation.timeout_seconds",
+                        "Compensation timeout_seconds must be greater than 0 and at most 3,600.",
+                    )
+                compensation_retries = compensation.get("retries", 0)
+                if not _valid_retries(compensation_retries):
+                    add(
+                        "compensation_retries",
+                        f"{path}.compensation.retries",
+                        "Compensation retries must be an integer from 0 to 10.",
+                    )
+                compensation_delay = compensation.get("retry_delay_seconds", 0.0)
+                if not _valid_retry_delay(compensation_delay):
+                    add(
+                        "compensation_retry_delay",
+                        f"{path}.compensation.retry_delay_seconds",
+                        "Compensation retry_delay_seconds must be between 0 and 300.",
                     )
 
     known = set(valid_ids)

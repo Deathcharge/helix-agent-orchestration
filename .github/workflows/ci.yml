@@ -60,7 +60,7 @@ jobs:
           verify_dir="$(mktemp -d)"
           samsarix-orchestration init "$verify_dir/approval.json" --approval
           samsarix-orchestration plan "$verify_dir/approval.json" --format json > "$verify_dir/plan.json"
-          python -c "import json,sys; p=json.load(open(sys.argv[1])); assert p['approval_steps'] == ['publish']; assert p['wave_count'] == 2; assert len(p['workflow_digest']) == 64" "$verify_dir/plan.json"
+          python -c "import json,sys; p=json.load(open(sys.argv[1])); assert p['schema_version'] == 2; assert p['approval_steps'] == ['publish']; assert p['wave_count'] == 2; assert len(p['workflow_digest']) == 64" "$verify_dir/plan.json"
           samsarix-orchestration plan "$verify_dir/approval.json" --format mermaid | grep -q "class n1 approval"
           set +e
           samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval > "$verify_dir/paused.json"
@@ -70,3 +70,12 @@ jobs:
           request_id="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['approvals'][0]['request_id'])" "$verify_dir/paused.json")"
           samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval --resume --approve "$request_id" > "$verify_dir/completed.json"
           python -c "import json,sys; assert json.load(open(sys.argv[1]))['status'] == 'succeeded'" "$verify_dir/completed.json"
+          samsarix-orchestration init "$verify_dir/saga.json" --saga
+          set +e
+          samsarix-orchestration run "$verify_dir/saga.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-saga > "$verify_dir/saga-result.json"
+          saga_status=$?
+          set -e
+          test "$saga_status" -eq 1
+          python -c "import json,sys; r=json.load(open(sys.argv[1])); assert r['status'] == 'failed'; assert r['compensation_status'] == 'succeeded'; assert len(r['compensations']) == 2" "$verify_dir/saga-result.json"
+          samsarix-orchestration runs show "$verify_dir/runs.db" wheel-saga > "$verify_dir/saga-checkpoint.json"
+          python -c "import json,sys; c=json.load(open(sys.argv[1])); assert c['phase'] == 'complete'; assert c['successful_compensations'] == 2; assert all('output' not in x for x in c['compensations'])" "$verify_dir/saga-checkpoint.json"

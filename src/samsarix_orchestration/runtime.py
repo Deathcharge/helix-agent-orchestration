@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Protocol, TypeGuard
+from typing import Any, Protocol, TypeGuard, TypeVar
 
 from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
 from .spec import (
@@ -29,6 +29,7 @@ from .spec import (
 
 MAX_RESULT_BYTES = 1_048_576
 ActionHandler = Callable[["ActionContext"], Any | Awaitable[Any]]
+CompensationHandler = Callable[["CompensationContext"], Any | Awaitable[Any]]
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MAX_APPROVAL_ACTOR_CHARACTERS = 128
@@ -58,6 +59,14 @@ class ApprovalDecisionKind(StrEnum):
 
     APPROVE = "approve"
     REJECT = "reject"
+
+
+class CheckpointPhase(StrEnum):
+    """Durable schema-v3 execution phase."""
+
+    FORWARD = "forward"
+    COMPENSATING = "compensating"
+    COMPLETE = "complete"
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +260,23 @@ class ActionContext:
 
 
 @dataclass(frozen=True, slots=True)
+class CompensationContext:
+    """Data supplied to a compensator for one previously successful step."""
+
+    workflow_name: str
+    step: WorkflowStep
+    workflow_input: Any
+    dependencies: Mapping[str, Any]
+    output: Any
+    attempt: int
+    run_id: str
+    idempotency_key: str
+
+
+HandlerContextT = TypeVar("HandlerContextT", ActionContext, CompensationContext)
+
+
+@dataclass(frozen=True, slots=True)
 class StepResult:
     """Serializable terminal result for one workflow step."""
 
@@ -336,7 +362,7 @@ class StepResult:
 
 @dataclass(frozen=True, slots=True)
 class WorkflowCheckpoint:
-    """Successful results and approvals persisted for a specific workflow input."""
+    """Durable forward, approval, and compensation state for one exact workflow input."""
 
     version: int
     run_id: str
@@ -345,6 +371,8 @@ class WorkflowCheckpoint:
     saved_at: str
     steps: tuple[StepResult, ...]
     approvals: tuple[ApprovalRecord, ...] = ()
+    phase: CheckpointPhase = CheckpointPhase.FORWARD
+    compensations: tuple[StepResult, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stable JSON representation."""
@@ -358,6 +386,9 @@ class WorkflowCheckpoint:
         }
         if self.version >= 2:
             value["approvals"] = [approval.to_dict() for approval in self.approvals]
+        if self.version >= 3:
+            value["phase"] = self.phase.value
+            value["compensations"] = [result.to_dict() for result in self.compensations]
         return value
 
     @classmethod
@@ -366,8 +397,8 @@ class WorkflowCheckpoint:
         if not isinstance(value, dict):
             raise WorkflowExecutionError("Checkpoint must be a JSON object.")
         version = value.get("version")
-        if type(version) is not int or version not in (1, 2):
-            raise WorkflowExecutionError("Only checkpoint versions 1 and 2 are supported.")
+        if type(version) is not int or version not in (1, 2, 3):
+            raise WorkflowExecutionError("Only checkpoint versions 1, 2, and 3 are supported.")
         if version == 2 and set(value) != {
             "version",
             "run_id",
@@ -378,12 +409,29 @@ class WorkflowCheckpoint:
             "approvals",
         }:
             raise WorkflowExecutionError("Checkpoint version 2 has an invalid shape.")
+        if version == 3 and set(value) != {
+            "version",
+            "run_id",
+            "workflow_digest",
+            "input_digest",
+            "saved_at",
+            "steps",
+            "approvals",
+            "phase",
+            "compensations",
+        }:
+            raise WorkflowExecutionError("Checkpoint version 3 has an invalid shape.")
         run_id = value.get("run_id")
         workflow_digest = value.get("workflow_digest")
         input_digest = value.get("input_digest")
         saved_at = value.get("saved_at")
         raw_steps = value.get("steps")
         raw_approvals = value.get("approvals", [])
+        raw_compensations = value.get("compensations", [])
+        try:
+            phase = CheckpointPhase(value.get("phase", CheckpointPhase.FORWARD))
+        except (TypeError, ValueError) as exc:
+            raise WorkflowExecutionError("Checkpoint phase is invalid.") from exc
         if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
             raise WorkflowExecutionError("Checkpoint run_id is invalid.")
         if not _is_sha256(workflow_digest) or not _is_sha256(input_digest):
@@ -392,24 +440,68 @@ class WorkflowCheckpoint:
             raise WorkflowExecutionError("Checkpoint saved_at is invalid.")
         if not isinstance(raw_steps, list):
             raise WorkflowExecutionError("Checkpoint steps must be a JSON array.")
-        if not isinstance(raw_approvals, list):
-            raise WorkflowExecutionError("Checkpoint approvals must be a JSON array.")
-        if len(raw_steps) > MAX_STEPS or len(raw_approvals) > MAX_STEPS:
+        if not isinstance(raw_approvals, list) or not isinstance(raw_compensations, list):
             raise WorkflowExecutionError(
-                f"Checkpoint may contain at most {MAX_STEPS} steps and approvals."
+                "Checkpoint approvals and compensations must be JSON arrays."
+            )
+        if any(len(items) > MAX_STEPS for items in (raw_steps, raw_approvals, raw_compensations)):
+            raise WorkflowExecutionError(
+                f"Checkpoint may contain at most {MAX_STEPS} steps, approvals, and compensations."
             )
         if version == 1 and ("approvals" in value or raw_approvals):
             raise WorkflowExecutionError("Checkpoint version 1 cannot contain approvals.")
         steps = tuple(StepResult.from_dict(step) for step in raw_steps)
         approvals = tuple(ApprovalRecord.from_dict(item) for item in raw_approvals)
+        compensations = tuple(StepResult.from_dict(item) for item in raw_compensations)
         if len({step.step_id for step in steps}) != len(steps):
             raise WorkflowExecutionError("Checkpoint contains duplicate step results.")
-        if any(step.state is not StepState.SUCCEEDED for step in steps):
+        terminal_states = {
+            StepState.SUCCEEDED,
+            StepState.FAILED,
+            StepState.BLOCKED,
+            StepState.CANCELLED,
+            StepState.REJECTED,
+        }
+        if version >= 3 and any(step.state not in terminal_states for step in steps):
+            raise WorkflowExecutionError("Checkpoint contains a non-terminal step result.")
+        if version < 3 and any(step.state is not StepState.SUCCEEDED for step in steps):
             raise WorkflowExecutionError("Checkpoints may contain only successful step results.")
         if any(
-            step.attempts < 1 or step.started_at is None or step.error is not None for step in steps
+            step.attempts < 1 or step.started_at is None or step.error is not None
+            for step in steps
+            if step.state is StepState.SUCCEEDED
         ):
             raise WorkflowExecutionError("Checkpoint contains an invalid successful step result.")
+        if version >= 3 and any(
+            step.error is None for step in steps if step.state is not StepState.SUCCEEDED
+        ):
+            raise WorkflowExecutionError("Checkpoint contains an invalid terminal step result.")
+        if len({result.step_id for result in compensations}) != len(compensations):
+            raise WorkflowExecutionError("Checkpoint contains duplicate compensation results.")
+        if any(result.state is not StepState.SUCCEEDED for result in compensations):
+            raise WorkflowExecutionError("Checkpoints may contain only successful compensations.")
+        if any(
+            result.attempts < 1 or result.started_at is None or result.error is not None
+            for result in compensations
+        ):
+            raise WorkflowExecutionError("Checkpoint contains an invalid successful compensation.")
+        forward_results = {result.step_id: result for result in steps}
+        if any(
+            result.step_id not in forward_results
+            or forward_results[result.step_id].state is not StepState.SUCCEEDED
+            for result in compensations
+        ):
+            raise WorkflowExecutionError(
+                "Checkpoint compensation does not reference a successful forward step."
+            )
+        if phase is CheckpointPhase.FORWARD and compensations:
+            raise WorkflowExecutionError(
+                "Forward-phase checkpoint cannot contain compensation results."
+            )
+        if version < 3 and ("phase" in value or "compensations" in value or compensations):
+            raise WorkflowExecutionError(
+                "Checkpoint versions 1 and 2 cannot contain compensation state."
+            )
         if len({record.request_id for record in approvals}) != len(approvals):
             raise WorkflowExecutionError("Checkpoint contains duplicate approval requests.")
         if len({record.step_id for record in approvals}) != len(approvals):
@@ -422,6 +514,8 @@ class WorkflowCheckpoint:
             saved_at=saved_at,
             steps=steps,
             approvals=approvals,
+            phase=phase,
+            compensations=compensations,
         )
 
 
@@ -452,6 +546,8 @@ class WorkflowRunResult:
     restored_steps: int = 0
     approvals: tuple[ApprovalRecord, ...] = ()
     schema_version: int = 1
+    compensations: tuple[StepResult, ...] = ()
+    compensation_status: str = "not_requested"
 
     @property
     def succeeded(self) -> bool:
@@ -474,6 +570,9 @@ class WorkflowRunResult:
         if self.schema_version >= 2:
             value["schema_version"] = self.schema_version
             value["approvals"] = [approval.to_dict() for approval in self.approvals]
+        if self.schema_version >= 3:
+            value["compensation_status"] = self.compensation_status
+            value["compensations"] = [result.to_dict() for result in self.compensations]
         return value
 
 
@@ -549,6 +648,7 @@ class WorkflowRunner:
         self,
         actions: Mapping[str, ActionHandler] | None = None,
         *,
+        compensations: Mapping[str, CompensationHandler] | None = None,
         fail_fast: bool = True,
         max_result_bytes: int = MAX_RESULT_BYTES,
         event_handlers: Iterable[EventHandler] | None = None,
@@ -556,11 +656,14 @@ class WorkflowRunner:
         if max_result_bytes < 1:
             raise ValueError("max_result_bytes must be positive")
         self._actions: dict[str, ActionHandler] = {}
+        self._compensations: dict[str, CompensationHandler] = {}
         self.fail_fast = fail_fast
         self.max_result_bytes = max_result_bytes
         self._event_handlers: list[EventHandler] = []
         for name, handler in (actions or {}).items():
             self.register_action(name, handler)
+        for name, compensation_handler in (compensations or {}).items():
+            self.register_compensation(name, compensation_handler)
         for event_handler in event_handlers or ():
             self.register_event_handler(event_handler)
 
@@ -578,6 +681,14 @@ class WorkflowRunner:
             raise TypeError("Event handler must be callable.")
         self._event_handlers.append(handler)
 
+    def register_compensation(self, name: str, handler: CompensationHandler) -> None:
+        """Register or replace a compensating handler by explicit action name."""
+        if not name or len(name) > 64:
+            raise ValueError("Compensation name must contain 1 to 64 characters.")
+        if not callable(handler):
+            raise TypeError(f"Compensation handler for {name!r} must be callable.")
+        self._compensations[name] = handler
+
     async def run(
         self,
         workflow: WorkflowDefinition,
@@ -590,10 +701,11 @@ class WorkflowRunner:
     ) -> WorkflowRunResult:
         """Run or resume a workflow and return a terminal-state report.
 
-        Checkpoints reuse only successful step results whose workflow and input
-        digests match exactly. Persistence is at-least-once: handlers that cause
-        external effects must honor ``ActionContext.idempotency_key`` because a
-        process can stop after the effect succeeds but before its checkpoint saves.
+        Forward recovery reuses successful results whose workflow and input digests match
+        exactly. Schema-v3 compensation recovery restores terminal forward state and
+        completed compensations. Persistence is at-least-once: effectful handlers must
+        honor their context idempotency key because a process can stop after an effect
+        succeeds but before its checkpoint saves.
         """
         workflow.require_valid()
         self._require_json_value(workflow_input, label="workflow input")
@@ -615,10 +727,15 @@ class WorkflowRunner:
         if resume and run_id is None:
             raise WorkflowExecutionError("resume requires an explicit run_id.")
         has_approval_gates = any(step.approval is not None for step in workflow.steps)
+        has_compensations = any(step.compensation is not None for step in workflow.steps)
         if has_approval_gates and checkpoint_store is None:
             raise WorkflowExecutionError("Approval gates require a checkpoint store.")
         if has_approval_gates and run_id is None:
             raise WorkflowExecutionError("Approval gates require an explicit run_id.")
+        if has_compensations and checkpoint_store is None:
+            raise WorkflowExecutionError("Compensating actions require a checkpoint store.")
+        if has_compensations and run_id is None:
+            raise WorkflowExecutionError("Compensating actions require an explicit run_id.")
         effective_run_id = run_id or str(uuid.uuid4())
         if not _RUN_ID.fullmatch(effective_run_id):
             raise WorkflowExecutionError("run_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.")
@@ -626,6 +743,14 @@ class WorkflowRunner:
         if missing:
             raise WorkflowExecutionError(
                 "No handler registered for action(s): " + ", ".join(missing)
+            )
+        missing_compensations = sorted(
+            {step.compensation.action for step in workflow.steps if step.compensation is not None}
+            - self._compensations.keys()
+        )
+        if missing_compensations:
+            raise WorkflowExecutionError(
+                "No handler registered for compensation(s): " + ", ".join(missing_compensations)
             )
 
         started_at = _utc_now()
@@ -638,6 +763,8 @@ class WorkflowRunner:
         pending = set(ordered_steps)
         results: dict[str, StepResult] = {}
         approvals: dict[str, ApprovalRecord] = {}
+        compensation_results: dict[str, StepResult] = {}
+        phase = CheckpointPhase.FORWARD
         workflow_digest = _json_digest(workflow.to_dict())
         input_digest = _json_digest(workflow_input)
         checkpoint = (
@@ -660,9 +787,11 @@ class WorkflowRunner:
                 results=results,
                 pending=pending,
                 approvals=approvals,
+                compensations=compensation_results,
                 workflow_version=workflow.version,
                 run_id=effective_run_id,
             )
+            phase = checkpoint.phase
         elif checkpoint is not None:
             raise WorkflowExecutionError(
                 f"Checkpoint already exists for run_id {effective_run_id!r}; "
@@ -685,12 +814,28 @@ class WorkflowRunner:
                     workflow=workflow.name,
                     step_id=step.id,
                     attempt=restored.attempts,
-                    state=StepState.SUCCEEDED,
+                    state=restored.state,
                     duration_ms=restored.duration_ms,
+                    resumed=True,
+                )
+            if step.id in compensation_results:
+                restored_compensation = compensation_results[step.id]
+                await dispatcher.emit(
+                    WorkflowEventKind.COMPENSATION_RESTORED,
+                    run_id=effective_run_id,
+                    workflow=workflow.name,
+                    step_id=step.id,
+                    attempt=restored_compensation.attempts,
+                    state=StepState.SUCCEEDED,
+                    duration_ms=restored_compensation.duration_ms,
                     resumed=True,
                 )
 
         if decisions:
+            if phase is not CheckpointPhase.FORWARD:
+                raise WorkflowExecutionError(
+                    "Approval decisions cannot be applied after compensation starts."
+                )
             applied: list[tuple[ApprovalRecord, ApprovalDecision]] = []
             for decision in decisions:
                 record = approvals.get(decision.request_id)
@@ -745,7 +890,7 @@ class WorkflowRunner:
             )
 
         try:
-            while pending:
+            while pending and phase is CheckpointPhase.FORWARD:
                 blocked_ids = [
                     step.id
                     for step in workflow.steps
@@ -1061,6 +1206,91 @@ class WorkflowRunner:
                     )
                 )
             )
+            compensation_status = "not_requested"
+            compensation_report = tuple(
+                compensation_results[step.id]
+                for step in workflow.steps
+                if step.id in compensation_results
+            )
+            eligible_compensations = tuple(
+                step
+                for step in workflow.steps
+                if step.compensation is not None
+                and step.id in results
+                and results[step.id].state is StepState.SUCCEEDED
+            )
+            if status in ("failed", "rejected") and eligible_compensations:
+                if checkpoint_store is None:
+                    raise WorkflowExecutionError("Compensating actions require a checkpoint store.")
+                if phase is CheckpointPhase.FORWARD:
+                    phase = CheckpointPhase.COMPENSATING
+                    await self._persist_phase(
+                        store=checkpoint_store,
+                        workflow=workflow,
+                        run_id=effective_run_id,
+                        workflow_digest=workflow_digest,
+                        input_digest=input_digest,
+                        results=results,
+                        approvals=approvals,
+                        phase=phase,
+                        compensations=compensation_results,
+                        dispatcher=dispatcher,
+                        resumed=resume,
+                    )
+                if phase is CheckpointPhase.COMPENSATING:
+                    compensation_report = await self._run_compensations(
+                        workflow=workflow,
+                        workflow_input=workflow_input,
+                        run_id=effective_run_id,
+                        workflow_digest=workflow_digest,
+                        input_digest=input_digest,
+                        results=results,
+                        approvals=approvals,
+                        successful=compensation_results,
+                        checkpoint_store=checkpoint_store,
+                        semaphore=semaphore,
+                        dispatcher=dispatcher,
+                        resumed=resume,
+                    )
+                    if all(step.id in compensation_results for step in eligible_compensations):
+                        phase = CheckpointPhase.COMPLETE
+                        compensation_status = "succeeded"
+                        await self._persist_phase(
+                            store=checkpoint_store,
+                            workflow=workflow,
+                            run_id=effective_run_id,
+                            workflow_digest=workflow_digest,
+                            input_digest=input_digest,
+                            results=results,
+                            approvals=approvals,
+                            phase=phase,
+                            compensations=compensation_results,
+                            dispatcher=dispatcher,
+                            resumed=resume,
+                        )
+                    else:
+                        compensation_status = "failed"
+                else:
+                    compensation_status = "succeeded"
+            if (
+                workflow.version >= 3
+                and phase is CheckpointPhase.FORWARD
+                and checkpoint_store is not None
+            ):
+                phase = CheckpointPhase.COMPLETE
+                await self._persist_phase(
+                    store=checkpoint_store,
+                    workflow=workflow,
+                    run_id=effective_run_id,
+                    workflow_digest=workflow_digest,
+                    input_digest=input_digest,
+                    results=results,
+                    approvals=approvals,
+                    phase=phase,
+                    compensations=compensation_results,
+                    dispatcher=dispatcher,
+                    resumed=resume,
+                )
             duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)
             run_result = WorkflowRunResult(
                 run_id=effective_run_id,
@@ -1074,6 +1304,8 @@ class WorkflowRunner:
                 restored_steps=restored_steps,
                 approvals=_ordered_approvals(workflow, approvals),
                 schema_version=workflow.version,
+                compensations=compensation_report,
+                compensation_status=compensation_status,
             )
             await dispatcher.emit(
                 (
@@ -1132,6 +1364,42 @@ class WorkflowRunner:
                 f"Cannot save checkpoint for run_id {checkpoint.run_id!r}: {exc}"
             ) from exc
 
+    async def _persist_phase(
+        self,
+        *,
+        store: CheckpointStore,
+        workflow: WorkflowDefinition,
+        run_id: str,
+        workflow_digest: str,
+        input_digest: str,
+        results: Mapping[str, StepResult],
+        approvals: Mapping[str, ApprovalRecord],
+        phase: CheckpointPhase,
+        compensations: Mapping[str, StepResult],
+        dispatcher: _EventDispatcher,
+        resumed: bool,
+    ) -> None:
+        """Persist one Saga phase transition and emit its lifecycle event."""
+        await self._save_checkpoint(
+            store,
+            self._build_checkpoint(
+                workflow,
+                run_id,
+                workflow_digest,
+                input_digest,
+                results,
+                approvals,
+                phase=phase,
+                compensations=compensations,
+            ),
+        )
+        await dispatcher.emit(
+            WorkflowEventKind.CHECKPOINT_SAVED,
+            run_id=run_id,
+            workflow=workflow.name,
+            resumed=resumed,
+        )
+
     def _restore_checkpoint(
         self,
         checkpoint: WorkflowCheckpoint,
@@ -1142,6 +1410,7 @@ class WorkflowRunner:
         results: dict[str, StepResult],
         pending: set[str],
         approvals: dict[str, ApprovalRecord],
+        compensations: dict[str, StepResult],
         workflow_version: int,
         run_id: str,
     ) -> None:
@@ -1180,6 +1449,25 @@ class WorkflowRunner:
             )
             results[result.step_id] = result
             pending.remove(result.step_id)
+        for result in checkpoint.compensations:
+            step = ordered_steps.get(result.step_id)
+            if step is None or step.compensation is None:
+                raise WorkflowExecutionError(
+                    f"Checkpoint compensation references unconfigured step {result.step_id!r}."
+                )
+            if result.action != step.compensation.action or result.agent != step.agent:
+                raise WorkflowExecutionError(
+                    f"Checkpoint compensation metadata does not match step {result.step_id!r}."
+                )
+            if result.step_id not in restored_ids:
+                raise WorkflowExecutionError(
+                    f"Checkpoint compensation lacks forward result {result.step_id!r}."
+                )
+            self._require_json_value(
+                result.output,
+                label=f"checkpoint compensation output from {result.step_id}",
+            )
+            compensations[result.step_id] = result
         for record in checkpoint.approvals:
             step = ordered_steps.get(record.step_id)
             if step is None or step.approval is None:
@@ -1209,6 +1497,35 @@ class WorkflowRunner:
                     f"Successful step {record.step_id!r} lacks durable approval."
                 )
             approvals[record.request_id] = record
+        if checkpoint.phase is not CheckpointPhase.FORWARD:
+            if pending:
+                raise WorkflowExecutionError(
+                    "Compensation-phase checkpoint must contain every terminal forward result."
+                )
+            business_unsuccessful = not all(
+                result.state is StepState.SUCCEEDED for result in results.values()
+            )
+            eligible = {
+                step.id
+                for step in ordered_steps.values()
+                if step.compensation is not None and results[step.id].state is StepState.SUCCEEDED
+            }
+            completed = set(compensations)
+            if checkpoint.phase is CheckpointPhase.COMPENSATING and (
+                not business_unsuccessful or not eligible - completed
+            ):
+                raise WorkflowExecutionError(
+                    "Compensating checkpoint has no valid unfinished compensation."
+                )
+            if checkpoint.phase is CheckpointPhase.COMPLETE:
+                if business_unsuccessful and eligible != completed:
+                    raise WorkflowExecutionError(
+                        "Complete checkpoint is missing successful compensation results."
+                    )
+                if not business_unsuccessful and completed:
+                    raise WorkflowExecutionError(
+                        "Successful workflow checkpoint cannot contain compensation results."
+                    )
 
     @staticmethod
     def _build_checkpoint(
@@ -1218,6 +1535,9 @@ class WorkflowRunner:
         input_digest: str,
         results: Mapping[str, StepResult],
         approvals: Mapping[str, ApprovalRecord],
+        *,
+        phase: CheckpointPhase = CheckpointPhase.FORWARD,
+        compensations: Mapping[str, StepResult] | None = None,
     ) -> WorkflowCheckpoint:
         return WorkflowCheckpoint(
             version=workflow.version,
@@ -1228,9 +1548,19 @@ class WorkflowRunner:
             steps=tuple(
                 results[step.id]
                 for step in workflow.steps
-                if step.id in results and results[step.id].state is StepState.SUCCEEDED
+                if step.id in results
+                and (
+                    results[step.id].state is StepState.SUCCEEDED
+                    or phase is not CheckpointPhase.FORWARD
+                )
             ),
             approvals=_ordered_approvals(workflow, approvals),
+            phase=phase,
+            compensations=tuple(
+                (compensations or {})[step.id]
+                for step in workflow.steps
+                if step.id in (compensations or {})
+            ),
         )
 
     async def _paused_result(
@@ -1268,6 +1598,231 @@ class WorkflowRunner:
             resumed=resumed,
         )
         return result
+
+    async def _run_compensations(
+        self,
+        *,
+        workflow: WorkflowDefinition,
+        workflow_input: Any,
+        run_id: str,
+        workflow_digest: str,
+        input_digest: str,
+        results: Mapping[str, StepResult],
+        approvals: Mapping[str, ApprovalRecord],
+        successful: dict[str, StepResult],
+        checkpoint_store: CheckpointStore,
+        semaphore: asyncio.Semaphore,
+        dispatcher: _EventDispatcher,
+        resumed: bool,
+    ) -> tuple[StepResult, ...]:
+        """Compensate successful effects in reverse dependency order."""
+        eligible = {
+            step.id
+            for step in workflow.steps
+            if step.compensation is not None
+            and step.id in results
+            and results[step.id].state is StepState.SUCCEEDED
+        }
+        remaining = eligible - successful.keys()
+        report = dict(successful)
+        dependents: dict[str, set[str]] = {step.id: set() for step in workflow.steps}
+        for step in workflow.steps:
+            for dependency in step.dependencies:
+                dependents[dependency].add(step.id)
+
+        while remaining:
+            ready = tuple(
+                step
+                for step in workflow.steps
+                if step.id in remaining and not (dependents[step.id] & remaining)
+            )
+            if not ready:
+                raise WorkflowExecutionError("Compensation graph unexpectedly stalled.")
+            tasks = [
+                asyncio.create_task(
+                    self._run_compensation(
+                        workflow.name,
+                        run_id,
+                        step,
+                        workflow_input,
+                        {
+                            dependency: results[dependency].output
+                            for dependency in step.dependencies
+                        },
+                        results[step.id].output,
+                        semaphore,
+                        dispatcher,
+                    )
+                )
+                for step in ready
+            ]
+            try:
+                batch = await asyncio.gather(*tasks)
+            except BaseException:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+            failed = False
+            for result in batch:
+                report[result.step_id] = result
+                remaining.remove(result.step_id)
+                if result.state is StepState.SUCCEEDED:
+                    successful[result.step_id] = result
+                else:
+                    failed = True
+            await self._persist_phase(
+                store=checkpoint_store,
+                workflow=workflow,
+                run_id=run_id,
+                workflow_digest=workflow_digest,
+                input_digest=input_digest,
+                results=results,
+                approvals=approvals,
+                phase=CheckpointPhase.COMPENSATING,
+                compensations=successful,
+                dispatcher=dispatcher,
+                resumed=resumed,
+            )
+            if failed:
+                break
+        return tuple(report[step.id] for step in workflow.steps if step.id in report)
+
+    async def _run_compensation(
+        self,
+        workflow_name: str,
+        run_id: str,
+        step: WorkflowStep,
+        workflow_input: Any,
+        dependencies: Mapping[str, Any],
+        output: Any,
+        semaphore: asyncio.Semaphore,
+        dispatcher: _EventDispatcher,
+    ) -> StepResult:
+        policy = step.compensation
+        if policy is None:
+            raise WorkflowExecutionError(f"Step {step.id!r} has no compensation policy.")
+        async with semaphore:
+            started_at = _utc_now()
+            started_clock = time.perf_counter()
+            last_error: BaseException | None = None
+            attempts = policy.retries + 1
+            attempts_used = 0
+            handler = self._compensations[policy.action]
+            handler_is_async = inspect.iscoroutinefunction(handler)
+            for attempt in range(1, attempts + 1):
+                attempts_used = attempt
+                await dispatcher.emit(
+                    WorkflowEventKind.COMPENSATION_STARTED,
+                    run_id=run_id,
+                    workflow=workflow_name,
+                    step_id=step.id,
+                    attempt=attempt,
+                    state=StepState.RUNNING,
+                )
+                context = CompensationContext(
+                    workflow_name=workflow_name,
+                    step=step,
+                    workflow_input=workflow_input,
+                    dependencies=dependencies,
+                    output=output,
+                    attempt=attempt,
+                    run_id=run_id,
+                    idempotency_key=f"{run_id}:{step.id}:compensate",
+                )
+                try:
+                    compensation_output = await asyncio.wait_for(
+                        self._invoke(handler, context),
+                        timeout=policy.timeout_seconds,
+                    )
+                    self._require_json_value(
+                        compensation_output,
+                        label=f"compensation output from step {step.id}",
+                    )
+                    result = StepResult(
+                        step_id=step.id,
+                        agent=step.agent,
+                        action=policy.action,
+                        state=StepState.SUCCEEDED,
+                        attempts=attempt,
+                        started_at=started_at,
+                        finished_at=_utc_now(),
+                        duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
+                        output=compensation_output,
+                    )
+                    await dispatcher.emit(
+                        WorkflowEventKind.COMPENSATION_SUCCEEDED,
+                        run_id=run_id,
+                        workflow=workflow_name,
+                        step_id=step.id,
+                        attempt=attempt,
+                        state=StepState.SUCCEEDED,
+                        duration_ms=result.duration_ms,
+                    )
+                    return result
+                except asyncio.CancelledError:
+                    try:
+                        await dispatcher.emit(
+                            WorkflowEventKind.COMPENSATION_CANCELLED,
+                            run_id=run_id,
+                            workflow=workflow_name,
+                            step_id=step.id,
+                            attempt=attempt,
+                            state=StepState.CANCELLED,
+                            duration_ms=round(
+                                (time.perf_counter() - started_clock) * 1_000,
+                                3,
+                            ),
+                        )
+                    except EventDeliveryError:
+                        pass
+                    raise
+                except EventDeliveryError:
+                    raise
+                except TimeoutError:
+                    last_error = TimeoutError(
+                        f"Compensation exceeded its {policy.timeout_seconds:g}s timeout."
+                    )
+                    if not handler_is_async:
+                        break
+                except Exception as exc:
+                    last_error = exc
+                if attempt < attempts:
+                    await dispatcher.emit(
+                        WorkflowEventKind.COMPENSATION_RETRY_SCHEDULED,
+                        run_id=run_id,
+                        workflow=workflow_name,
+                        step_id=step.id,
+                        attempt=attempt,
+                        state=StepState.RUNNING,
+                        error_type=type(last_error).__name__,
+                    )
+                    if policy.retry_delay_seconds:
+                        await asyncio.sleep(policy.retry_delay_seconds)
+            if last_error is None:
+                raise RuntimeError("Compensation exhausted its attempts without an error.")
+            result = StepResult(
+                step_id=step.id,
+                agent=step.agent,
+                action=policy.action,
+                state=StepState.FAILED,
+                attempts=attempts_used,
+                started_at=started_at,
+                finished_at=_utc_now(),
+                duration_ms=round((time.perf_counter() - started_clock) * 1_000, 3),
+                error={"type": type(last_error).__name__, "message": str(last_error)[:1_000]},
+            )
+            await dispatcher.emit(
+                WorkflowEventKind.COMPENSATION_FAILED,
+                run_id=run_id,
+                workflow=workflow_name,
+                step_id=step.id,
+                attempt=attempts_used,
+                state=StepState.FAILED,
+                duration_ms=result.duration_ms,
+                error_type=type(last_error).__name__,
+            )
+            return result
 
     async def _run_step(
         self,
@@ -1411,7 +1966,11 @@ class WorkflowRunner:
             )
             return result
 
-    async def _invoke(self, handler: ActionHandler, context: ActionContext) -> Any:
+    async def _invoke(
+        self,
+        handler: Callable[[HandlerContextT], Any | Awaitable[Any]],
+        context: HandlerContextT,
+    ) -> Any:
         if inspect.iscoroutinefunction(handler):
             return await handler(context)
         result = await asyncio.to_thread(handler, context)
@@ -1544,6 +2103,15 @@ def _require_monotonic_checkpoint(
         or existing.input_digest != candidate.input_digest
     ):
         raise WorkflowExecutionError("Checkpoint identity cannot change for a run.")
+    phase_order = {
+        CheckpointPhase.FORWARD: 0,
+        CheckpointPhase.COMPENSATING: 1,
+        CheckpointPhase.COMPLETE: 2,
+    }
+    if phase_order[candidate.phase] < phase_order[existing.phase]:
+        raise WorkflowExecutionError("Checkpoint execution phase cannot regress.")
+    if existing.phase is CheckpointPhase.COMPLETE and existing.to_dict() != candidate.to_dict():
+        raise WorkflowExecutionError("A complete checkpoint is immutable.")
     existing_steps = {step.step_id: step for step in existing.steps}
     candidate_steps = {step.step_id: step for step in candidate.steps}
     if not existing_steps.keys() <= candidate_steps.keys():
@@ -1574,7 +2142,39 @@ def _require_monotonic_checkpoint(
             raise WorkflowExecutionError(
                 f"Checkpoint cannot change decided approval {request_id!r}."
             )
+    existing_compensations = {result.step_id: result for result in existing.compensations}
+    candidate_compensations = {result.step_id: result for result in candidate.compensations}
+    if not existing_compensations.keys() <= candidate_compensations.keys():
+        raise WorkflowExecutionError("Checkpoint cannot regress successful compensations.")
+    for step_id, result in existing_compensations.items():
+        if result.to_dict() != candidate_compensations[step_id].to_dict():
+            raise WorkflowExecutionError(
+                f"Checkpoint contains divergent compensation for step {step_id!r}."
+            )
 
 
 def _is_sha256(value: Any) -> TypeGuard[str]:
     return isinstance(value, str) and _SHA256.fullmatch(value) is not None
+
+
+__all__ = [
+    "MAX_APPROVAL_ACTOR_CHARACTERS",
+    "MAX_APPROVAL_REASON_CHARACTERS",
+    "MAX_RESULT_BYTES",
+    "ActionContext",
+    "ActionHandler",
+    "ApprovalDecision",
+    "ApprovalDecisionKind",
+    "ApprovalRecord",
+    "ApprovalStatus",
+    "CheckpointPhase",
+    "CheckpointStore",
+    "CompensationContext",
+    "CompensationHandler",
+    "EventDeliveryError",
+    "StepResult",
+    "WorkflowCheckpoint",
+    "WorkflowExecutionError",
+    "WorkflowRunResult",
+    "WorkflowRunner",
+]

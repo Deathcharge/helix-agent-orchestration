@@ -11,6 +11,7 @@ import pytest
 from samsarix_orchestration import (
     PLAN_SCHEMA_VERSION,
     ApprovalPolicy,
+    CompensationPolicy,
     InMemoryCheckpointStore,
     WorkflowDefinition,
     WorkflowRunner,
@@ -23,7 +24,7 @@ from samsarix_orchestration.cli import main
 
 def planning_workflow() -> WorkflowDefinition:
     return WorkflowDefinition(
-        version=2,
+        version=3,
         name="release-plan",
         max_concurrency=2,
         steps=(
@@ -48,6 +49,7 @@ def planning_workflow() -> WorkflowDefinition:
                 dependencies=("source",),
                 retries=2,
                 timeout_seconds=12.5,
+                compensation=CompensationPolicy(action="discard"),
             ),
         ),
     )
@@ -56,11 +58,12 @@ def planning_workflow() -> WorkflowDefinition:
 def test_plan_derives_deterministic_waves_and_graph_metadata() -> None:
     plan = build_workflow_plan(planning_workflow())
 
-    assert plan.schema_version == PLAN_SCHEMA_VERSION == 1
+    assert plan.schema_version == PLAN_SCHEMA_VERSION == 2
     assert len(plan.workflow_digest) == 64
     assert plan.roots == ("source",)
     assert plan.leaves == ("publish", "audit")
     assert plan.approval_steps == ("publish",)
+    assert plan.compensation_steps == ("transform",)
     assert plan.longest_dependency_chain == ("source", "transform", "publish")
     assert plan.edge_count == 3
     assert plan.max_wave_width == 2
@@ -75,12 +78,18 @@ def test_plan_derives_deterministic_waves_and_graph_metadata() -> None:
     assert transform.max_attempts == 3
     assert transform.timeout_seconds == 12.5
     assert transform.dependents == ("publish",)
+    assert transform.compensation_action == "discard"
 
     rendered = plan.to_dict()
     assert rendered["step_count"] == 4
     assert rendered["workflow_digest"] == plan.workflow_digest
     assert rendered["wave_count"] == 3
     assert rendered["max_concurrency"] == 2
+    assert rendered["workflow_schema_version"] == 3
+    assert rendered["compensation_steps"] == ["transform"]
+    assert next(step for step in rendered["steps"] if step["id"] == "transform")[
+        "compensation_action"
+    ] == "discard"
     assert rendered["waves"][-1] == {
         "index": 3,
         "step_ids": ["publish"],
@@ -92,12 +101,15 @@ def test_plan_text_and_mermaid_are_stable_and_omit_approval_prompt() -> None:
     plan = build_workflow_plan(planning_workflow())
 
     text = plan.to_text()
-    assert 'Workflow: "release-plan" (schema 2)' in text
+    assert 'Workflow: "release-plan" (schema 3)' in text
+    assert "compensates=discard" in text
     assert "Wave 3 [approval barrier]:" in text
     assert "publish: action=publish | agent=release" in text
     assert "Longest dependency chain: source -> transform -> publish" in text
 
     mermaid = plan.to_mermaid()
+    assert "(undo: discard)" in mermaid
+    assert "class n3 compensable" in mermaid
     assert mermaid.startswith("flowchart TD\n")
     assert 'n0["publish<br/>publish · release<br/>(approval)"]' in mermaid
     assert "n1 --> n3" in mermaid
@@ -116,7 +128,10 @@ async def test_plan_digest_matches_runtime_checkpoint_identity() -> None:
         for name in ("publish", "load", "audit", "transform")
     }
 
-    paused = await WorkflowRunner(actions).run(
+    paused = await WorkflowRunner(
+        actions,
+        compensations={"discard": lambda context: context.step.id},
+    ).run(
         workflow,
         run_id="plan-digest",
         checkpoint_store=store,

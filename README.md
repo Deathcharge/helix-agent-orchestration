@@ -4,6 +4,8 @@ Samsarix Orchestration is a local-first Python library and CLI for defining, val
 planning, and running small dependency-aware workflows. Application code registers ordinary
 sync or async Python callables as actions; Samsarix supplies graph validation, bounded
 concurrency, per-step timeouts and retries, failure propagation, and a JSON run report.
+Schema-v3 workflows can also reverse completed external effects with durable compensating
+actions after a later failure or approval rejection.
 
 It is for Python developers who want a transparent provider-neutral orchestration
 primitive before adopting a distributed or hosted workflow system. It does not include
@@ -27,11 +29,13 @@ not yet been published to a package index.
 - Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
 - Schema-v2 pre-action approval gates with durable approve/reject decisions and a strict
   no-handler-before-approval barrier.
+- Schema-v3 orchestrated Saga compensation with reverse dependency ordering, independent
+  retry policies, interruption-safe checkpoints, and stable compensation idempotency keys.
 - Side-effect-free dependency plans and offline Mermaid graph export for preflight review.
 - A separately installed consumer proving resume, idempotency, and event contracts across
   a real package boundary.
 - JSON-safe inputs, outputs, errors, and terminal step states.
-- A provider-free CLI example using four deterministic built-in actions.
+- Provider-free CLI examples for successful, approval-gated, and compensating workflows.
 - No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
 
 Distributed workers, process isolation, dynamic mid-handler interrupts, provider adapters,
@@ -63,7 +67,7 @@ You can use `python -m samsarix_orchestration` instead of the installed command.
 ```text
 samsarix-orchestration --version
 samsarix-orchestration actions
-samsarix-orchestration init PATH [--force] [--approval]
+samsarix-orchestration init PATH [--force] [--approval | --saga]
 samsarix-orchestration validate PATH [--json]
 samsarix-orchestration plan PATH [--format text|json|mermaid]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
@@ -104,8 +108,8 @@ samsarix-orchestration plan workflow.json --format mermaid > workflow.mmd
 
 The plan preserves workflow order for its step inventory while deriving deterministic
 dependency waves, roots, leaves, dependants, the longest dependency chain, maximum wave
-width, retry-attempt ceilings, the canonical workflow digest, and approval-barrier
-locations. A wave marked as an
+width, retry-attempt ceilings, the canonical workflow digest, approval-barrier locations,
+and compensating-action inventory. A wave marked as an
 approval barrier reflects the runtime's global rule: none of that dependency-ready group
 starts while a request remains pending. Mermaid output uses internal node IDs and omits
 approval prompts; it is source text only, so rendering remains an explicit caller choice.
@@ -235,6 +239,40 @@ them. Applications own reviewer authentication, authorization policy, presentati
 prepared outputs, and protection of checkpoint files. Approval request IDs are identifiers,
 not bearer secrets.
 
+## Roll back partial external effects
+
+Schema-v3 steps may name a separately registered compensating action. Generate and run a
+complete local Saga demonstration:
+
+```bash
+samsarix-orchestration init order-saga.json --saga
+samsarix-orchestration plan order-saga.json
+samsarix-orchestration run order-saga.json \
+  --checkpoint-db .samsarix-runs/sagas.db \
+  --run-id order-42 --events
+```
+
+The demo intentionally fails its final forward step, compensates `charge` before `reserve`,
+and exits with `1` because the business workflow did not succeed. Its report separately
+records `compensation_status: "succeeded"`. This distinction prevents a successful rollback
+from being mistaken for successful business completion.
+
+Python applications pass a separate `compensations` mapping to `WorkflowRunner`. A
+`CompensationContext` contains the original step output, its dependency outputs, workflow
+input, and a stable `run-id:step-id:compensate` idempotency key. Compensable steps in the
+same reverse dependency wave may run concurrently; prerequisites are not compensated until
+all still-pending compensable dependants succeed.
+
+The runtime checkpoints the `compensating` phase before invoking a compensator and records
+each successful reverse effect after its dependency wave. If a compensator exhausts its
+bounded retry policy, earlier prerequisites remain untouched and a later `resume=True`
+attempt retries only unfinished compensation. As with forward actions, the effect and its
+checkpoint cannot be made atomic by this library: compensators must honor their idempotency
+key. Compensation is application-defined semantic repair, not database rollback or proof
+that the original side effect was perfectly reversible. The runnable
+[compensating order example](examples/compensating_order.py) shows the same contract with
+application-defined Python handlers.
+
 ## Resume expensive or side-effecting work
 
 Checkpointing is explicit and remains local. Give a run a stable identifier and a store:
@@ -254,7 +292,9 @@ result = await runner.run(
 
 The first attempt omits `resume=True`. A resumed attempt must use the exact same workflow
 definition and JSON input; canonical SHA-256 identities prevent accidental replay against
-changed work. Only successful steps are restored. Failed steps run again, and every
+changed work. Schema-v1/v2 forward recovery restores only successful steps, so failed steps
+run again. Schema-v3 checkpoints additionally retain terminal forward results once a Saga
+enters compensation, allowing resume to continue rollback without replaying forward work. Every
 handler receives a stable `context.idempotency_key` of `run-id:step-id` across attempts.
 Starting a new checkpointed run with an existing run id fails closed; explicitly resume
 it or choose another id.
@@ -329,7 +369,7 @@ Workflow JSON selects only action names that the host application explicitly reg
 Concurrency, step count, timeouts, retries, input size, and output size are bounded.
 Cancellation propagates to running async actions.
 
-Action handlers are trusted application code and have the full privileges of the Python
+Action and compensation handlers are trusted application code and have the full privileges of the Python
 process. Samsarix Orchestration is not a sandbox. A handler that calls a model or external
 API owns its authentication, destination validation, timeout, cancellation, privacy,
 and cost controls. The built-in CLI path has no API or operating cost beyond local

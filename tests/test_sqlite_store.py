@@ -123,6 +123,29 @@ def test_concurrent_distinct_runs_are_committed(tmp_path: Path) -> None:
     }
 
 
+def test_wal_startup_retries_a_transient_sqlite_lock(tmp_path: Path) -> None:
+    class LockedThenReady:
+        calls = 0
+
+        def execute(self, statement: str) -> LockedThenReady:
+            assert statement == "PRAGMA journal_mode = WAL"
+            self.calls += 1
+            if self.calls == 1:
+                error = sqlite3.OperationalError("database is locked")
+                error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                raise error
+            return self
+
+        def fetchone(self) -> tuple[str]:
+            return ("wal",)
+
+    connection: Any = LockedThenReady()
+    store = SqliteCheckpointStore(tmp_path / "runs.db")
+
+    assert store._enable_wal(connection) == ("wal",)
+    assert connection.calls == 2
+
+
 @pytest.mark.asyncio
 async def test_runner_resumes_a_failed_sqlite_run_without_repeating_success(
     tmp_path: Path,

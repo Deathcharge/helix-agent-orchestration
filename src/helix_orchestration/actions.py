@@ -5,10 +5,22 @@
 
 from samsarix_orchestration.actions import (
     builtin_actions,
+    builtin_compensations,
     collect,
+    compensate,
     echo,
+    fail,
     uppercase,
     word_count,
 )
 
-__all__ = ["builtin_actions", "collect", "echo", "uppercase", "word_count"]
+__all__ = [
+    "builtin_actions",
+    "builtin_compensations",
+    "collect",
+    "compensate",
+    "echo",
+    "fail",
+    "uppercase",
+    "word_count",
+]

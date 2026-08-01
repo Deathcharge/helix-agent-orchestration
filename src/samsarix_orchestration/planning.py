@@ -13,7 +13,7 @@ from typing import Any
 
 from .spec import WorkflowDefinition
 
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +28,7 @@ class PlannedStep:
     dependents: tuple[str, ...]
     wave: int
     approval_required: bool
+    compensation_action: str | None
     timeout_seconds: float
     max_attempts: int
 
@@ -42,6 +43,7 @@ class PlannedStep:
             "dependents": list(self.dependents),
             "wave": self.wave,
             "approval_required": self.approval_required,
+            "compensation_action": self.compensation_action,
             "timeout_seconds": self.timeout_seconds,
             "max_attempts": self.max_attempts,
         }
@@ -94,6 +96,11 @@ class WorkflowPlan:
         """Return the widest static dependency wave."""
         return max(len(wave.step_ids) for wave in self.waves)
 
+    @property
+    def compensation_steps(self) -> tuple[str, ...]:
+        """Return compensable step identifiers in workflow order."""
+        return tuple(step.id for step in self.steps if step.compensation_action is not None)
+
     def to_dict(self) -> dict[str, Any]:
         """Return the stable machine-readable plan representation."""
         return {
@@ -109,6 +116,7 @@ class WorkflowPlan:
             "roots": list(self.roots),
             "leaves": list(self.leaves),
             "approval_steps": list(self.approval_steps),
+            "compensation_steps": list(self.compensation_steps),
             "longest_dependency_chain": list(self.longest_dependency_chain),
             "waves": [wave.to_dict() for wave in self.waves],
             "steps": [step.to_dict() for step in self.steps],
@@ -133,9 +141,15 @@ class WorkflowPlan:
             for step_id in wave.step_ids:
                 step = by_id[step_id]
                 gate = " | approval required" if step.approval_required else ""
+                compensation = (
+                    f" | compensates={step.compensation_action}"
+                    if step.compensation_action is not None
+                    else ""
+                )
                 lines.append(
                     f"  - {step.id}: action={step.action} | agent={step.agent} | "
-                    f"attempts<={step.max_attempts} | timeout={step.timeout_seconds:g}s{gate}"
+                    f"attempts<={step.max_attempts} | timeout={step.timeout_seconds:g}s"
+                    f"{gate}{compensation}"
                 )
         return "\n".join(lines) + "\n"
 
@@ -151,6 +165,8 @@ class WorkflowPlan:
             )
             if step.approval_required:
                 label += "<br/>(approval)"
+            if step.compensation_action is not None:
+                label += f"<br/>(undo: {html.escape(step.compensation_action, quote=True)})"
             lines.append(f'  {node_ids[step.id]}["{label}"]')
         for root in self.roots:
             lines.append(f"  start --> {node_ids[root]}")
@@ -163,6 +179,10 @@ class WorkflowPlan:
             lines.append("  classDef approval fill:#fff3cd,stroke:#9a6700,stroke-width:2px")
             gated = ",".join(node_ids[step_id] for step_id in self.approval_steps)
             lines.append(f"  class {gated} approval")
+        if self.compensation_steps:
+            lines.append("  classDef compensable stroke:#8250df,stroke-width:2px")
+            compensable = ",".join(node_ids[step_id] for step_id in self.compensation_steps)
+            lines.append(f"  class {compensable} compensable")
         return "\n".join(lines) + "\n"
 
 
@@ -210,6 +230,9 @@ def build_workflow_plan(workflow: WorkflowDefinition) -> WorkflowPlan:
             dependents=tuple(dependents[step.id]),
             wave=wave_by_step[step.id],
             approval_required=step.approval is not None,
+            compensation_action=(
+                step.compensation.action if step.compensation is not None else None
+            ),
             timeout_seconds=step.timeout_seconds,
             max_attempts=step.retries + 1,
         )

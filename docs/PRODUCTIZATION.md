@@ -105,6 +105,10 @@ distributed durable execution or continuation from inside a running handler.
 9. Expose deterministic static plans as text, stable JSON, and offline Mermaid source.
    Planning validates definitions but never imports handlers, reads run input, or chooses
    a renderer.
+10. Introduce compensation only in strict workflow schema version 3. Persist the reverse
+    phase before effects, execute successful steps in reverse dependency waves, retain
+    completed compensation across resume, and report rollback separately from business
+    workflow success.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
@@ -125,6 +129,11 @@ Current ecosystem evidence informed the limits rather than expanding scope:
   Samsarix implements the zero-network source/metadata subset without a rendering
   dependency: https://docs.langchain.com/oss/python/langgraph/use-graph-api#visualize-your-graph
   and https://docs.prefect.io/v3/api-ref/python/prefect-flows#prefect.flows.Flow.visualize
+- AWS documents orchestrated Sagas as compensating successful transactions in reverse
+  after a later failure, and Prefect distinguishes rollback hooks from ordinary failure
+  hooks. Samsarix implements the bounded embedded form with explicit idempotent handlers:
+  https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html
+  and https://docs.prefect.io/v3/advanced/transactions
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
   https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
@@ -157,6 +166,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add ordered structured progress callbacks and explicit cancellation events.
 - [x] Add durable, state-bound pre-action approval and rejection gates.
 - [x] Add offline dependency plans and Mermaid source for review and downstream UIs.
+- [x] Add durable schema-v3 compensating actions with reverse dependency execution.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
 
@@ -177,6 +187,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
   rejection propagation, event privacy, and concurrent-decision tests.
 - [x] Stable static plan schema with deterministic waves, graph metadata, and prompt-free
   Mermaid export.
+- [x] Durable compensating phase, separate handler registry and outcome, retry/resume,
+  cancellation events, privacy-safe inspection, and installed CLI Saga journey.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
@@ -209,6 +221,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - Added a generated approval workflow, CLI and Python decision APIs, durable SQLite/JSON
   approval state, privacy-safe inspection, and installed-wheel smoke coverage.
 - Added deterministic Python and CLI preflight plans with text, JSON, and Mermaid formats.
+- Added schema-v3 compensation policies, durable reverse execution, lifecycle events,
+  planning metadata, and a provider-free `init --saga` failure/recovery demonstration.
 - Adopted MPL-2.0 under Samsarix LLC ownership and added notice, migration, and trademark
   documentation.
 
@@ -223,6 +237,10 @@ Distributed durable execution remains deferred. The local checkpoint contract no
 identity, atomic file replacement, transactional same-host SQLite writes, output
 compatibility, resume rules, safe inspection, explicit deletion, and idempotency keys.
 Cross-host coordination, retention automation, and exactly-once effects are not claimed.
+
+Compensation is semantic and at least once. It cannot erase observation of an original
+effect or make an irreversible operation transactional. A reverse handler may complete
+before its checkpoint is committed, so it must deduplicate the stable compensation key.
 
 Approval gates are intentionally static and pre-action. Dynamic pauses from inside a
 handler, editable action arguments, delegated reviewer policy, quorum decisions, expiry,
@@ -256,6 +274,8 @@ release provenance, or third-party adoption gates.
   runner does not retry a timed-out sync handler because that could overlap side effects.
 - A crash after an external effect but before checkpoint commit can repeat that effect;
   handlers must apply the stable idempotency key at the destination.
+- A compensation can fail or be only partially meaningful. Earlier prerequisites remain
+  untouched after a reverse-wave failure, but operators still own domain reconciliation.
 - Handler output is measured after it is returned, so a malicious trusted handler can
   allocate memory before the 1 MiB serialization limit is applied.
 - The old distribution/import/CLI aliases intentionally remain visible during the 0.1
@@ -265,13 +285,13 @@ release provenance, or third-party adoption gates.
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified
-locally on Python 3.14. The SQLite, approval-gate, and offline-planning milestones were
+locally on Python 3.14. The SQLite, approval-gate, offline-planning, and compensation milestones were
 fully verified and packaged with Python 3.11; the repository CI matrix remains
 authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
 - `python -m mypy`: pass, 20 source files across the primary and compatibility packages;
-- `python -m pytest`: 124 passed, 89.25% branch-aware coverage;
+- `python -m pytest`: 148 passed, 89.08% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
