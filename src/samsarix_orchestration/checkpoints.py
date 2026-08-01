@@ -52,7 +52,9 @@ class JsonDirectoryCheckpointStore:
 
     Run identifiers are hashed for filenames, preventing path traversal and keeping
     filesystem naming rules out of the public run-id contract. A run should have only
-    one active writer; this store is not a distributed coordination primitive.
+    one active writer; both monotonicity checks and atomic replacement assume that
+    application-owned coordination. This store is not a distributed coordination
+    primitive.
     """
 
     def __init__(

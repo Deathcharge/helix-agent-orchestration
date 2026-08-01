@@ -1049,12 +1049,16 @@ class WorkflowRunner:
             finished_at = _utc_now()
             ordered_results = tuple(results[step.id] for step in workflow.steps)
             status = (
-                "succeeded"
-                if all(result.state is StepState.SUCCEEDED for result in ordered_results)
+                "failed"
+                if any(result.state is StepState.FAILED for result in ordered_results)
                 else (
-                    "rejected"
-                    if any(result.state is StepState.REJECTED for result in ordered_results)
-                    else "failed"
+                    "succeeded"
+                    if all(result.state is StepState.SUCCEEDED for result in ordered_results)
+                    else (
+                        "rejected"
+                        if any(result.state is StepState.REJECTED for result in ordered_results)
+                        else "failed"
+                    )
                 )
             )
             duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)

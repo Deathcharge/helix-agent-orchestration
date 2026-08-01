@@ -102,10 +102,11 @@ not match. Failed, blocked, cancelled, pending, and running results are never re
 Checkpoint version 2 additionally stores ordered approval records. Each record includes
 the request and context digests, step ID, bounded prompt, request time, state
 (`pending`, `approved`, `rejected`, or `cancelled`), and bounded optional decision metadata.
-Stores reject removed requests, changed request identity, decision reversal, successful-step
-regression, and divergence. Checkpoints use the same version as their workflow.
+Within each store's writer-coordination contract, saves reject removed requests, changed
+request identity, decision reversal, successful-step regression, and divergence.
+Checkpoints use the same version as their workflow.
 
-Run reports add two fields:
+Run reports add the following fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -116,7 +117,9 @@ Run reports add two fields:
 
 Invocation status can be `paused` while requests await decisions or `rejected` after a
 negative decision, in addition to `succeeded` and `failed`. A paused result contains only
-steps that have already reached a terminal state; pending steps have not run.
+steps that have already reached a terminal state; pending steps have not run. If a result
+ever contains both failed and rejected steps, `failed` takes precedence in the run status
+and terminal event.
 
 The JSON directory store bounds each file to 16 MiB by default and uses a SHA-256 hash of
 the run id as its filename. The run id remains inside the auditable JSON document.

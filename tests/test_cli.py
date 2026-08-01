@@ -403,7 +403,7 @@ def test_cli_approval_pause_approve_and_reject_journeys(
     ]
     assert main(reject_common) == 3
     rejected_request = json.loads(capsys.readouterr().out)["approvals"][0]["request_id"]
-    assert main([*reject_common, "--resume", "--reject", rejected_request]) == 1
+    assert main([*reject_common, "--resume", "--reject", rejected_request]) == 4
     rejected = json.loads(capsys.readouterr().out)
     assert rejected["status"] == "rejected"
     assert rejected["steps"][0]["state"] == "rejected"
@@ -424,3 +424,47 @@ def test_cli_approval_decision_usage_is_validated(
 
     assert main(["run", str(workflow), "--approve", request_id]) == 2
     assert "require --resume" in capsys.readouterr().err
+
+    for option, value in (
+        ("--decided-by", "reviewer"),
+        ("--decision-reason", "reviewed"),
+    ):
+        assert main(["run", str(workflow), option, value]) == 2
+        assert "require a decision" in capsys.readouterr().err
+
+    resume = [
+        "run",
+        str(workflow),
+        "--checkpoint-db",
+        str(tmp_path / "runs.db"),
+        "--run-id",
+        "decision-validation",
+        "--resume",
+    ]
+    assert (
+        main(
+            [
+                *resume,
+                "--approve",
+                request_id,
+                "--reject",
+                request_id,
+            ]
+        )
+        == 2
+    )
+    assert "decided only once" in capsys.readouterr().err
+
+    assert (
+        main(
+            [
+                *resume,
+                "--approve",
+                request_id,
+                "--approve",
+                request_id,
+            ]
+        )
+        == 2
+    )
+    assert "decided only once" in capsys.readouterr().err

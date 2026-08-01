@@ -320,6 +320,8 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
             print(rendered)
             if result.status == "paused":
                 return 3
+            if result.status == "rejected":
+                return 4
             return 0 if result.succeeded else 1
     except WorkflowSpecError as exc:
         _print_spec_error(exc)

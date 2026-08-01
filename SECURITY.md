@@ -30,8 +30,10 @@ Approval gates are available only in strict workflow schema version 2. Older run
 reject version 2, preventing them from silently ignoring a gate. A pending gate persists
 before returning `paused`; the full ready batch remains behind the barrier. An approve or
 reject decision persists before the runtime invokes or rejects the gated step. Store
-monotonicity prevents normal callers from removing a request or reversing a decided one,
-and SQLite permits only one winner among concurrent divergent decisions.
+monotonicity prevents normal callers from removing a request or reversing a decided one.
+SQLite enforces that check transactionally and permits only one winner among concurrent
+divergent decisions. The in-memory guard applies within one store instance, while the JSON
+store requires application-owned single-writer coordination for each run.
 
 This is an execution barrier, not an identity or authorization system. Request IDs are
 not bearer secrets. Applications must authenticate the reviewer, authorize the requested

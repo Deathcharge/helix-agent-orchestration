@@ -81,6 +81,7 @@ Exit codes are stable:
 - `1`: workflow execution failed;
 - `2`: usage, workflow, input, or output validation failed;
 - `3`: execution paused before a gated action and awaits an approval decision;
+- `4`: an operator rejected an approval request;
 - `130`: the user interrupted execution.
 
 Workflow and input files are limited to 1 MiB. Each step result is also limited to
