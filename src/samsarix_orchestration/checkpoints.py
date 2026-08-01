@@ -13,7 +13,11 @@ import tempfile
 import threading
 from pathlib import Path
 
-from .runtime import WorkflowCheckpoint, WorkflowExecutionError
+from .runtime import (
+    WorkflowCheckpoint,
+    WorkflowExecutionError,
+    _require_monotonic_checkpoint,
+)
 
 MAX_CHECKPOINT_BYTES = 16_777_216
 
@@ -37,6 +41,9 @@ class InMemoryCheckpointStore:
         """Replace the latest checkpoint for a run."""
         validated = WorkflowCheckpoint.from_dict(copy.deepcopy(checkpoint.to_dict()))
         with self._lock:
+            existing = self._checkpoints.get(checkpoint.run_id)
+            if existing is not None:
+                _require_monotonic_checkpoint(existing, validated)
             self._checkpoints[checkpoint.run_id] = validated
 
 
@@ -45,7 +52,9 @@ class JsonDirectoryCheckpointStore:
 
     Run identifiers are hashed for filenames, preventing path traversal and keeping
     filesystem naming rules out of the public run-id contract. A run should have only
-    one active writer; this store is not a distributed coordination primitive.
+    one active writer; both monotonicity checks and atomic replacement assume that
+    application-owned coordination. This store is not a distributed coordination
+    primitive.
     """
 
     def __init__(
@@ -120,6 +129,9 @@ class JsonDirectoryCheckpointStore:
             )
 
         path = self.path_for(checkpoint.run_id)
+        existing = self.load(checkpoint.run_id)
+        if existing is not None:
+            _require_monotonic_checkpoint(existing, validated)
         descriptor, temporary_name = tempfile.mkstemp(
             dir=self.directory,
             prefix=f".{path.name}.",

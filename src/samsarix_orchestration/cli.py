@@ -20,6 +20,10 @@ from .actions import builtin_actions
 from .checkpoints import JsonDirectoryCheckpointStore
 from .events import WorkflowEvent
 from .runtime import (
+    MAX_APPROVAL_ACTOR_CHARACTERS,
+    MAX_APPROVAL_REASON_CHARACTERS,
+    ApprovalDecision,
+    ApprovalDecisionKind,
     CheckpointStore,
     WorkflowCheckpoint,
     WorkflowExecutionError,
@@ -56,6 +60,32 @@ EXAMPLE_WORKFLOW: dict[str, Any] = {
         },
     ],
 }
+APPROVAL_EXAMPLE_WORKFLOW: dict[str, Any] = {
+    "version": 2,
+    "name": "production-release-approval",
+    "description": "Prepare a release plan, then pause before publishing it.",
+    "max_concurrency": 2,
+    "steps": [
+        {
+            "id": "prepare",
+            "agent": "release",
+            "action": "echo",
+            "parameters": {
+                "value": {
+                    "artifact": "samsarix-orchestration-0.1.0",
+                    "target": "production",
+                }
+            },
+        },
+        {
+            "id": "publish",
+            "agent": "release",
+            "action": "collect",
+            "dependencies": ["prepare"],
+            "approval": {"prompt": "Publish this release plan to production?"},
+        },
+    ],
+}
 
 
 def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentParser:
@@ -75,6 +105,11 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
         "--force",
         action="store_true",
         help="Explicitly replace an existing file.",
+    )
+    init_parser.add_argument(
+        "--approval",
+        action="store_true",
+        help="Generate a schema-v2 workflow with a pre-action approval gate.",
     )
 
     validate_parser = subparsers.add_parser(
@@ -120,12 +155,36 @@ def build_parser(*, prog: str = "samsarix-orchestration") -> argparse.ArgumentPa
         action="store_true",
         help="Stream privacy-minimized lifecycle events as JSON Lines to stderr.",
     )
+    run_parser.add_argument(
+        "--approve",
+        action="append",
+        default=[],
+        metavar="REQUEST_ID",
+        type=_approval_id,
+        help="Approve a pending request while resuming; may be repeated.",
+    )
+    run_parser.add_argument(
+        "--reject",
+        action="append",
+        default=[],
+        metavar="REQUEST_ID",
+        type=_approval_id,
+        help="Reject a pending request while resuming; may be repeated.",
+    )
+    run_parser.add_argument(
+        "--decided-by",
+        type=_decision_actor,
+        help="Optional unauthenticated reviewer label recorded on every supplied decision.",
+    )
+    run_parser.add_argument(
+        "--decision-reason",
+        type=_decision_reason,
+        help="Optional reason recorded on every supplied decision.",
+    )
 
     subparsers.add_parser("actions", help="List the safe built-in CLI actions.")
 
-    runs_parser = subparsers.add_parser(
-        "runs", help="Inspect or delete SQLite checkpoint runs."
-    )
+    runs_parser = subparsers.add_parser("runs", help="Inspect or delete SQLite checkpoint runs.")
     runs_subparsers = runs_parser.add_subparsers(dest="runs_command", required=True)
     list_parser = runs_subparsers.add_parser("list", help="List payload-free run metadata.")
     list_parser.add_argument("database", type=Path)
@@ -159,7 +218,11 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
-            _write_json(args.path, EXAMPLE_WORKFLOW, overwrite=args.force)
+            _write_json(
+                args.path,
+                APPROVAL_EXAMPLE_WORKFLOW if args.approval else EXAMPLE_WORKFLOW,
+                overwrite=args.force,
+            )
             print(f"Created {args.path}")
             print(f"Next: {parser.prog} validate {args.path}")
             return 0
@@ -192,11 +255,38 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
             return _manage_runs(args)
         if args.command == "run":
             if args.resume and args.checkpoint_dir is None and args.checkpoint_db is None:
-                raise WorkflowSpecError(
-                    "--resume requires --checkpoint-dir or --checkpoint-db."
-                )
+                raise WorkflowSpecError("--resume requires --checkpoint-dir or --checkpoint-db.")
             if args.resume and args.run_id is None:
                 raise WorkflowSpecError("--resume requires --run-id.")
+            if (args.approve or args.reject) and not args.resume:
+                raise WorkflowSpecError("--approve and --reject require --resume.")
+            if (args.decided_by is not None or args.decision_reason is not None) and not (
+                args.approve or args.reject
+            ):
+                raise WorkflowSpecError("--decided-by and --decision-reason require a decision.")
+            decision_ids = [*args.approve, *args.reject]
+            if len(decision_ids) != len(set(decision_ids)):
+                raise WorkflowSpecError("Each approval request may be decided only once.")
+            approval_decisions = (
+                *(
+                    ApprovalDecision(
+                        request_id,
+                        ApprovalDecisionKind.APPROVE,
+                        decided_by=args.decided_by,
+                        reason=args.decision_reason,
+                    )
+                    for request_id in args.approve
+                ),
+                *(
+                    ApprovalDecision(
+                        request_id,
+                        ApprovalDecisionKind.REJECT,
+                        decided_by=args.decided_by,
+                        reason=args.decision_reason,
+                    )
+                    for request_id in args.reject
+                ),
+            )
             workflow = load_workflow(args.path)
             workflow_input = _load_input(args.input, args.input_file)
             checkpoint_store: CheckpointStore | None
@@ -216,6 +306,7 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
                     run_id=args.run_id,
                     checkpoint_store=checkpoint_store,
                     resume=args.resume,
+                    approval_decisions=approval_decisions,
                 )
             )
             report = result.to_dict()
@@ -227,6 +318,10 @@ def main(argv: list[str] | None = None, *, prog: str = "samsarix-orchestration")
                     overwrite=args.force_output,
                 )
             print(rendered)
+            if result.status == "paused":
+                return 3
+            if result.status == "rejected":
+                return 4
             return 0 if result.succeeded else 1
     except WorkflowSpecError as exc:
         _print_spec_error(exc)
@@ -261,8 +356,28 @@ def _list_limit(value: str) -> int:
 
 def _run_id(value: str) -> str:
     if not _RUN_ID.fullmatch(value):
+        raise argparse.ArgumentTypeError("run ID must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+    return value
+
+
+def _approval_id(value: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise argparse.ArgumentTypeError("approval request ID must be 64 lowercase hex characters")
+    return value
+
+
+def _decision_actor(value: str) -> str:
+    if len(value) > MAX_APPROVAL_ACTOR_CHARACTERS:
         raise argparse.ArgumentTypeError(
-            "run ID must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+            f"reviewer label must be at most {MAX_APPROVAL_ACTOR_CHARACTERS} characters"
+        )
+    return value
+
+
+def _decision_reason(value: str) -> str:
+    if len(value) > MAX_APPROVAL_REASON_CHARACTERS:
+        raise argparse.ArgumentTypeError(
+            f"decision reason must be at most {MAX_APPROVAL_REASON_CHARACTERS} characters"
         )
     return value
 
@@ -287,9 +402,7 @@ def _manage_runs(args: argparse.Namespace) -> int:
         if checkpoint is None:
             raise WorkflowExecutionError(f"Checkpoint run {args.run_id!r} does not exist.")
         value = (
-            checkpoint.to_dict()
-            if args.include_outputs
-            else _privacy_safe_checkpoint(checkpoint)
+            checkpoint.to_dict() if args.include_outputs else _privacy_safe_checkpoint(checkpoint)
         )
         print(json.dumps(value, indent=2, sort_keys=True))
         return 0
@@ -311,7 +424,7 @@ def _sqlite_store(database: Path, *, create: bool = True) -> SqliteCheckpointSto
 
 
 def _privacy_safe_checkpoint(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:
-    return {
+    value: dict[str, Any] = {
         "version": checkpoint.version,
         "run_id": checkpoint.run_id,
         "workflow_digest": checkpoint.workflow_digest,
@@ -332,6 +445,20 @@ def _privacy_safe_checkpoint(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:
             for step in checkpoint.steps
         ],
     }
+    if checkpoint.version >= 2:
+        value["approvals"] = [
+            {
+                "request_id": approval.request_id,
+                "step_id": approval.step_id,
+                "prompt": approval.prompt,
+                "context_digest": approval.context_digest,
+                "requested_at": approval.requested_at,
+                "status": approval.status.value,
+                "decided_at": approval.decided_at,
+            }
+            for approval in checkpoint.approvals
+        ]
+    return value
 
 
 def _load_input(inline: str | None, input_file: Path | None) -> Any:

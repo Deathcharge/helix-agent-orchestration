@@ -57,3 +57,13 @@ jobs:
           python -c "import importlib.metadata as m, samsarix_orchestration as s, helix_orchestration as h; assert s.__version__ == h.__version__ == m.version('samsarix-orchestration') == '0.1.0'"
           samsarix-orchestration --version
           helix-orchestration --version
+          verify_dir="$(mktemp -d)"
+          samsarix-orchestration init "$verify_dir/approval.json" --approval
+          set +e
+          samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval > "$verify_dir/paused.json"
+          paused_status=$?
+          set -e
+          test "$paused_status" -eq 3
+          request_id="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['approvals'][0]['request_id'])" "$verify_dir/paused.json")"
+          samsarix-orchestration run "$verify_dir/approval.json" --checkpoint-db "$verify_dir/runs.db" --run-id wheel-approval --resume --approve "$request_id" > "$verify_dir/completed.json"
+          python -c "import json,sys; assert json.load(open(sys.argv[1]))['status'] == 'succeeded'" "$verify_dir/completed.json"

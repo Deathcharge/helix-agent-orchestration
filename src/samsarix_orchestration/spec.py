@@ -13,7 +13,20 @@ from typing import Any
 
 MAX_WORKFLOW_BYTES = 1_048_576
 MAX_STEPS = 256
+MAX_APPROVAL_PROMPT_CHARACTERS = 500
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_V2_WORKFLOW_FIELDS = {"version", "name", "description", "max_concurrency", "steps"}
+_V2_STEP_FIELDS = {
+    "id",
+    "action",
+    "agent",
+    "dependencies",
+    "parameters",
+    "timeout_seconds",
+    "retries",
+    "retry_delay_seconds",
+    "approval",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +47,17 @@ class WorkflowSpecError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class ApprovalPolicy:
+    """A static pre-action approval barrier for a schema-v2 step."""
+
+    prompt: str
+
+    def to_dict(self) -> dict[str, str]:
+        """Return the stable JSON representation."""
+        return {"prompt": self.prompt}
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowStep:
     """A bounded unit of work executed by a registered action handler."""
 
@@ -45,10 +69,11 @@ class WorkflowStep:
     timeout_seconds: float = 30.0
     retries: int = 0
     retry_delay_seconds: float = 0.0
+    approval: ApprovalPolicy | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stable JSON representation of this step."""
-        return {
+        value: dict[str, Any] = {
             "id": self.id,
             "agent": self.agent,
             "action": self.action,
@@ -58,6 +83,9 @@ class WorkflowStep:
             "retries": self.retries,
             "retry_delay_seconds": self.retry_delay_seconds,
         }
+        if self.approval is not None:
+            value["approval"] = self.approval.to_dict()
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +123,11 @@ class WorkflowDefinition:
                 timeout_seconds=float(raw.get("timeout_seconds", 30.0)),
                 retries=raw.get("retries", 0),
                 retry_delay_seconds=float(raw.get("retry_delay_seconds", 0.0)),
+                approval=(
+                    ApprovalPolicy(prompt=raw["approval"]["prompt"])
+                    if isinstance(raw.get("approval"), dict)
+                    else None
+                ),
             )
             for raw in raw_steps
         )
@@ -165,8 +198,15 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
         return (ValidationIssue("type", "$", "Workflow must be a JSON object."),)
 
     version = value.get("version", 1)
-    if type(version) is not int or version != 1:
-        add("version", "$.version", "Only workflow version 1 is supported.")
+    if type(version) is not int or version not in (1, 2):
+        add("version", "$.version", "Only workflow versions 1 and 2 are supported.")
+    if version == 2:
+        for field_name in sorted(value.keys() - _V2_WORKFLOW_FIELDS):
+            add(
+                "unknown_field",
+                f"$.{field_name}",
+                "Unknown fields are not allowed in workflow version 2.",
+            )
 
     name = value.get("name")
     if not isinstance(name, str) or not name.strip() or len(name) > 128:
@@ -205,6 +245,13 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
         if not isinstance(step, dict):
             add("step_type", path, "Each step must be a JSON object.")
             continue
+        if version == 2:
+            for field_name in sorted(step.keys() - _V2_STEP_FIELDS):
+                add(
+                    "unknown_field",
+                    f"{path}.{field_name}",
+                    "Unknown step fields are not allowed in workflow version 2.",
+                )
 
         step_id = step.get("id")
         if not isinstance(step_id, str) or not _IDENTIFIER.fullmatch(step_id):
@@ -292,6 +339,40 @@ def validate_workflow_data(value: Any) -> tuple[ValidationIssue, ...]:
                 f"{path}.retry_delay_seconds",
                 "retry_delay_seconds must be between 0 and 300.",
             )
+
+        if "approval" in step:
+            approval = step["approval"]
+            if version != 2:
+                add(
+                    "approval_version",
+                    f"{path}.approval",
+                    "Approval gates require workflow version 2.",
+                )
+            if not isinstance(approval, dict):
+                add(
+                    "approval_type",
+                    f"{path}.approval",
+                    "Approval must be a JSON object.",
+                )
+            else:
+                for field_name in sorted(approval.keys() - {"prompt"}):
+                    add(
+                        "unknown_field",
+                        f"{path}.approval.{field_name}",
+                        "Unknown approval fields are not allowed.",
+                    )
+                prompt = approval.get("prompt")
+                if (
+                    not isinstance(prompt, str)
+                    or not prompt.strip()
+                    or len(prompt) > MAX_APPROVAL_PROMPT_CHARACTERS
+                ):
+                    add(
+                        "approval_prompt",
+                        f"{path}.approval.prompt",
+                        "Approval prompt must be a non-empty string of at most "
+                        f"{MAX_APPROVAL_PROMPT_CHARACTERS} characters.",
+                    )
 
     known = set(valid_ids)
     graph: dict[str, list[str]] = {step_id: [] for step_id in valid_ids}

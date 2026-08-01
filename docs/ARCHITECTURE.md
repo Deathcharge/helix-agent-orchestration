@@ -46,6 +46,9 @@ removed from the working tree and remain available in Git history.
    steps and recomputes the remaining graph.
 9. Explicit event handlers receive serialized lifecycle transitions in per-run sequence
    order. Delivery is backpressured; no background telemetry task survives the run.
+10. In workflow schema version 2, a ready step with an approval policy creates a durable
+    request before the complete ready batch yields. Resume durably records approve or
+    reject before any approved handler can start.
 
 The runtime stores no hidden global workflow state. A `WorkflowRunner` contains only
 the host application's explicit action registry and configuration.
@@ -67,6 +70,9 @@ the host application's explicit action registry and configuration.
 - Lifecycle events omit inputs, parameters, outputs, dependency values, error messages,
   and idempotency keys. They retain run/workflow/step identifiers and exception type names,
   which applications must classify and protect as operational data.
+- Approval request IDs are integrity-binding identifiers, not authentication tokens.
+  The embedding application authenticates reviewers, authorizes decisions, and controls
+  which prepared outputs are shown to them.
 
 ## Reliability properties and limits
 
@@ -92,6 +98,14 @@ the host application's explicit action registry and configuration.
 - Checkpointing is at-least-once. A crash between an external effect and checkpoint commit
   can repeat the handler; the stable `run-id:step-id` idempotency key lets the destination
   deduplicate that effect.
+- Approval is at-most-one-decision per request. Requests bind the exact run, workflow,
+  input, gated step, and dependency outputs. All bundled stores enforce monotonic approval
+  records; SQLite serializes competing decisions in the same transaction as the checkpoint.
+- The barrier is global for a ready batch: if any ready step awaits approval, no ready
+  handler starts. A rejection invokes no gated handler, cancels sibling pending requests,
+  and fail-fast blocks all remaining steps.
+- Approval is static and occurs before an action attempt. It is not a stack continuation,
+  dynamic tool-call interrupt, payload editor, identity provider, or policy engine.
 - Timestamps and durations are observations, not a durable audit log.
 - Event handlers are trusted application code. Sync handlers run in a worker thread; sync
   and async handlers are invoked one at a time and awaited before execution advances.
@@ -113,3 +127,12 @@ streaming, and human approval, while general workflow tools expose explicit task
 timeouts, retries, and resumability. Samsarix Orchestration 0.1 implements the transparent
 embedded subset it can support honestly. Distributed execution and exactly-once effects
 remain explicit non-goals rather than simulated features.
+
+The approval contract was informed by current official patterns: LangGraph requires a
+checkpointer and stable thread identity for interrupts, Prefect distinguishes pause from
+suspend/re-entry, and Temporal separates asynchronous signals from validated updates.
+Samsarix implements only the bounded embedded pre-action subset:
+
+- https://docs.langchain.com/oss/python/langgraph/interrupts
+- https://docs.prefect.io/v3/advanced/interactive
+- https://github.com/temporalio/sdk-python

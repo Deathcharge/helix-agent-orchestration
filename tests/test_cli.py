@@ -67,6 +67,20 @@ def test_init_and_output_refuse_implicit_overwrite(
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "succeeded"
 
 
+def test_init_can_generate_a_valid_approval_workflow(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "approval.json"
+    assert main(["init", str(workflow), "--approval"]) == 0
+    capsys.readouterr()
+    value = json.loads(workflow.read_text(encoding="utf-8"))
+    assert value["version"] == 2
+    assert value["steps"][1]["approval"]["prompt"]
+    assert main(["validate", str(workflow), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["valid"] is True
+
+
 def test_cli_reports_validation_and_execution_errors(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -312,3 +326,145 @@ def test_cli_streams_privacy_minimized_json_events(
     assert events[-1]["kind"] == "run_succeeded"
     assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
     assert "hidden" not in captured.err
+
+
+def test_cli_approval_pause_approve_and_reject_journeys(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "approval.json"
+    workflow.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "name": "approval-cli",
+                "steps": [
+                    {
+                        "id": "publish",
+                        "action": "echo",
+                        "parameters": {"value": "prepared"},
+                        "approval": {"prompt": "Publish this result?"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    database = tmp_path / "approvals.db"
+    common = [
+        "run",
+        str(workflow),
+        "--checkpoint-db",
+        str(database),
+        "--run-id",
+        "approval-cli-run",
+        "--events",
+    ]
+
+    assert main(common) == 3
+    captured = capsys.readouterr()
+    paused = json.loads(captured.out)
+    request_id = paused["approvals"][0]["request_id"]
+    assert paused["status"] == "paused"
+    assert paused["steps"] == []
+    events = [json.loads(line) for line in captured.err.splitlines()]
+    assert events[-1]["kind"] == "run_paused"
+    assert all(event["schema_version"] == 2 for event in events)
+    assert "Publish this result?" not in captured.err
+
+    assert (
+        main(
+            [
+                *common,
+                "--resume",
+                "--approve",
+                request_id,
+                "--decided-by",
+                "release-manager",
+                "--decision-reason",
+                "Reviewed prepared output.",
+            ]
+        )
+        == 0
+    )
+    approved = json.loads(capsys.readouterr().out)
+    assert approved["status"] == "succeeded"
+    assert approved["approvals"][0]["status"] == "approved"
+    assert approved["approvals"][0]["decided_by"] == "release-manager"
+    assert approved["steps"][0]["output"] == "prepared"
+
+    reject_common = [
+        "run",
+        str(workflow),
+        "--checkpoint-db",
+        str(database),
+        "--run-id",
+        "rejected-cli-run",
+    ]
+    assert main(reject_common) == 3
+    rejected_request = json.loads(capsys.readouterr().out)["approvals"][0]["request_id"]
+    assert main([*reject_common, "--resume", "--reject", rejected_request]) == 4
+    rejected = json.loads(capsys.readouterr().out)
+    assert rejected["status"] == "rejected"
+    assert rejected["steps"][0]["state"] == "rejected"
+
+
+def test_cli_approval_decision_usage_is_validated(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workflow = tmp_path / "workflow.json"
+    assert main(["init", str(workflow)]) == 0
+    capsys.readouterr()
+    request_id = "a" * 64
+    with pytest.raises(SystemExit) as invalid_id:
+        main(["run", str(workflow), "--approve", "bad"])
+    assert invalid_id.value.code == 2
+    capsys.readouterr()
+
+    assert main(["run", str(workflow), "--approve", request_id]) == 2
+    assert "require --resume" in capsys.readouterr().err
+
+    for option, value in (
+        ("--decided-by", "reviewer"),
+        ("--decision-reason", "reviewed"),
+    ):
+        assert main(["run", str(workflow), option, value]) == 2
+        assert "require a decision" in capsys.readouterr().err
+
+    resume = [
+        "run",
+        str(workflow),
+        "--checkpoint-db",
+        str(tmp_path / "runs.db"),
+        "--run-id",
+        "decision-validation",
+        "--resume",
+    ]
+    assert (
+        main(
+            [
+                *resume,
+                "--approve",
+                request_id,
+                "--reject",
+                request_id,
+            ]
+        )
+        == 2
+    )
+    assert "decided only once" in capsys.readouterr().err
+
+    assert (
+        main(
+            [
+                *resume,
+                "--approve",
+                request_id,
+                "--approve",
+                request_id,
+            ]
+        )
+        == 2
+    )
+    assert "decided only once" in capsys.readouterr().err

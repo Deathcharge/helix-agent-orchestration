@@ -26,7 +26,28 @@ per logical run. SQLite creates `-wal` and `-shm` sidecars during use; protect a
 them consistently with the database. Neither store cryptographically authenticates data
 against a malicious local writer.
 
-Lifecycle observation is opt-in. Version 1 events exclude workflow inputs, parameters,
+Approval gates are available only in strict workflow schema version 2. Older runtimes
+reject version 2, preventing them from silently ignoring a gate. A pending gate persists
+before returning `paused`; the full ready batch remains behind the barrier. An approve or
+reject decision persists before the runtime invokes or rejects the gated step. Store
+monotonicity prevents normal callers from removing a request or reversing a decided one.
+SQLite enforces that check transactionally and permits only one winner among concurrent
+divergent decisions. The in-memory guard applies within one store instance, while the JSON
+store requires application-owned single-writer coordination for each run.
+
+This is an execution barrier, not an identity or authorization system. Request IDs are
+not bearer secrets. Applications must authenticate the reviewer, authorize the requested
+operation, prevent confused-deputy use, and pass decisions only after displaying the
+correct bound run and prepared outputs. A malicious process with checkpoint write access
+can forge data because checkpoints are not cryptographically authenticated.
+
+Approval prompts, reviewer labels, reasons, timestamps, request IDs, context digests, and
+successful preparation outputs are plaintext checkpoint or report data. Default lifecycle
+events omit prompts, labels, reasons, and outputs but retain request/run/step identifiers
+and decision kinds. Protect all of these according to their classification and avoid
+placing credentials in prompts or reasons.
+
+Lifecycle observation is opt-in. Events exclude workflow inputs, parameters,
 outputs, dependency values, error messages, and idempotency keys. They do include run,
 workflow, and step identifiers plus exception type names. Treat those fields as
 operational data, register only trusted event handlers, and apply authentication,

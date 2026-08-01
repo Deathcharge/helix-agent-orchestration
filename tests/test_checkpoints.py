@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from samsarix_orchestration import (
+    InMemoryCheckpointStore,
     JsonDirectoryCheckpointStore,
     StepResult,
     WorkflowCheckpoint,
@@ -71,6 +72,34 @@ async def test_json_store_round_trips_an_atomic_checkpoint(tmp_path: Path) -> No
     assert json.loads(path.read_text(encoding="utf-8"))["run_id"] == "order-42"
 
 
+@pytest.mark.asyncio
+async def test_runner_rejects_cross_run_checkpoint_from_custom_store() -> None:
+    source = InMemoryCheckpointStore()
+    runner = WorkflowRunner({"complete": lambda _context: {"ok": True}})
+    await runner.run(
+        one_step_workflow(),
+        run_id="source-run",
+        checkpoint_store=source,
+    )
+    checkpoint = source.load("source-run")
+    assert checkpoint is not None
+
+    class CrossRunStore:
+        def load(self, _run_id: str) -> WorkflowCheckpoint:
+            return checkpoint
+
+        def save(self, _checkpoint: WorkflowCheckpoint) -> None:
+            raise AssertionError("cross-run state must not save")
+
+    with pytest.raises(WorkflowExecutionError, match="run_id"):
+        await runner.run(
+            one_step_workflow(),
+            run_id="target-run",
+            checkpoint_store=CrossRunStore(),
+            resume=True,
+        )
+
+
 def test_json_store_rejects_invalid_and_oversized_files(tmp_path: Path) -> None:
     store = JsonDirectoryCheckpointStore(tmp_path, max_bytes=32)
     path = store.path_for("broken")
@@ -92,8 +121,6 @@ def test_json_store_configuration_and_run_ids_are_validated(tmp_path: Path) -> N
 
 
 def test_memory_store_returns_isolated_validated_snapshots() -> None:
-    from samsarix_orchestration import InMemoryCheckpointStore
-
     store = InMemoryCheckpointStore()
     checkpoint = WorkflowCheckpoint.from_dict(valid_checkpoint_data())
     store.save(checkpoint)
@@ -110,7 +137,7 @@ def test_memory_store_returns_isolated_validated_snapshots() -> None:
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        (("version",), 2, "version 1"),
+        (("version",), 3, "versions 1 and 2"),
         (("run_id",), "../bad", "run_id"),
         (("workflow_digest",), "bad", "digests"),
         (("saved_at",), 1, "saved_at"),

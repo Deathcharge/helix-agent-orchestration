@@ -11,6 +11,9 @@ Initial honest standalone release candidate.
 - Opt-in checkpoint stores, exact workflow/input identity validation, and resumable runs.
 - Transactional same-host SQLite checkpoints with bounded WAL concurrency, monotonic
   same-run updates, privacy-safe run inspection, and confirmation-gated deletion.
+- Strict schema-v2 pre-action approvals with durable state-bound decisions, paused and
+  rejected results, distinct pause/rejection exit codes, CLI approve/reject controls, and
+  privacy-minimized lifecycle events.
 - Stable action idempotency keys and a runnable side-effect recovery example.
 - Ordered schema-versioned lifecycle events, explicit observer failure semantics, and
   privacy-minimized CLI JSON Lines progress output.

@@ -65,8 +65,8 @@ explicitly registered Python callables.
 - Target user: a Python developer prototyping an agent/tool pipeline who wants a small
   transparent runtime without a hosted control plane or provider commitment.
 - Concrete problem: catch invalid graph definitions early, execute ready work with
-  bounded concurrency/retries/timeouts, propagate failure clearly, and obtain a
-  machine-readable run report.
+  bounded concurrency/retries/timeouts, stop sensitive actions behind durable review
+  gates, propagate failure clearly, and obtain a machine-readable run report.
 - Primary journey: install the wheel; generate a valid example; validate it; run it;
   inspect or persist the JSON result; then replace demonstration actions with trusted
   application handlers through the Python API.
@@ -78,9 +78,10 @@ explicitly registered Python callables.
   dual-license model needs contributor-rights planning before accepting outside work.
 
 The 0.1 release deliberately excludes built-in LLM/provider adapters, dynamic plugin
-loading, arbitrary command/code execution, authentication, a web UI/API, cloud
-deployment, distributed workers, subscriptions, and telemetry. Bounded local checkpoints
-are opt-in; they do not provide distributed durable execution.
+loading, arbitrary command/code execution, reviewer authentication or authorization, a
+web UI/API, cloud deployment, distributed workers, subscriptions, and telemetry. Bounded
+local checkpoints and static pre-action approvals are opt-in; they do not provide
+distributed durable execution or continuation from inside a running handler.
 
 ## Product and architecture decisions
 
@@ -98,15 +99,25 @@ are opt-in; they do not provide distributed durable execution.
    bounded development ranges live in one `pyproject.toml`.
 7. License the supported project under MPL-2.0, retain copyright and trademark notices,
    and keep the Samsarix brand policy separate from source-code permissions.
+8. Introduce approval gates only in strict workflow schema version 2. Bind each request to
+   the run, workflow, input, gated step, and dependency outputs; persist a decision before
+   starting its handler; and leave reviewer identity enforcement to the embedding system.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
-- LangGraph documents durable execution, persistence, streaming, and human-in-the-loop
-  as runtime concerns; Samsarix Orchestration 0.1 explicitly does not claim them:
-  https://docs.langchain.com/oss/python/langgraph/overview
+- LangGraph documents persistence and a stable thread identity as requirements for
+  resumable interrupts. Samsarix adopts the durable-state principle for a narrower static
+  pre-action gate, without claiming stack continuation or dynamic in-handler interrupts:
+  https://docs.langchain.com/oss/python/langgraph/interrupts
 - Prefect treats task state, retries, timeouts, and concurrency as core workflow
   behavior; Samsarix Orchestration implements a bounded local subset:
   https://docs.prefect.io/v3/concepts/tasks
+- Prefect's interactive workflows distinguish pausing from suspending and accept typed
+  operator input; this informed Samsarix's explicit paused result and bounded decision
+  contract: https://docs.prefect.io/v3/advanced/interactive
+- Temporal's Python SDK exposes asynchronous signals and validated request/response
+  updates; this informed the decision to keep approval requests addressable and to reject
+  stale or divergent decisions: https://github.com/temporalio/sdk-python
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
   https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
@@ -137,6 +148,7 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add bounded opt-in checkpoints with exact identity and stable idempotency keys.
 - [x] Add transactional same-host SQLite checkpoints and privacy-safe run operations.
 - [x] Add ordered structured progress callbacks and explicit cancellation events.
+- [x] Add durable, state-bound pre-action approval and rejection gates.
 - Decide whether the package name is available and intended for PyPI.
 - Add performance targets only after real usage workloads exist.
 
@@ -153,6 +165,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] CI and wheel-install smoke verification.
 - [x] Accurate README, architecture, workflow format, and this living record.
 - [x] Concurrent multi-run checkpoint persistence with corruption and lock-contention tests.
+- [x] Strict schema-v2 approval gates with durable decisions, a global ready-batch barrier,
+  rejection propagation, event privacy, and concurrent-decision tests.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
@@ -161,7 +175,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - `samsarix-orchestration --version`, `init`, `validate`, and `run` reproduce the
   documented journey.
 - Invalid documents, unknown actions, failed handlers, timeouts, retries, blocked
-  dependants, existing output files, and cancellation have tested behavior.
+  dependants, approval/rejection decisions, existing output files, and cancellation have
+  tested behavior.
 - Ruff, strict MyPy, and the complete test suite pass.
 - The wheel contains the supported package and thin compatibility namespace, with no
   historical subpackages.
@@ -181,6 +196,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - Added safe defaults, explicit overwrite controls, bounded errors, and a zero-network
   runtime.
 - Added release CI, package smoke checks, and accurate user/developer documentation.
+- Added a generated approval workflow, CLI and Python decision APIs, durable SQLite/JSON
+  approval state, privacy-safe inspection, and installed-wheel smoke coverage.
 - Adopted MPL-2.0 under Samsarix LLC ownership and added notice, migration, and trademark
   documentation.
 
@@ -195,6 +212,13 @@ Distributed durable execution remains deferred. The local checkpoint contract no
 identity, atomic file replacement, transactional same-host SQLite writes, output
 compatibility, resume rules, safe inspection, explicit deletion, and idempotency keys.
 Cross-host coordination, retention automation, and exactly-once effects are not claimed.
+
+Approval gates are intentionally static and pre-action. Dynamic pauses from inside a
+handler, editable action arguments, delegated reviewer policy, quorum decisions, expiry,
+and a hosted approval inbox remain deferred until real integrations establish their
+requirements. The request identifier is an operational correlation value, not a bearer
+credential; callers must authenticate and authorize reviewers before constructing a
+decision.
 
 ## External package consumer
 
@@ -230,17 +254,18 @@ release provenance, or third-party adoption gates.
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified
-locally on Python 3.14. The SQLite milestone was fully verified and packaged with Python
-3.11; the repository CI matrix remains authoritative for Python 3.11 through 3.13:
+locally on Python 3.14. The SQLite and approval-gate milestones were fully verified and
+packaged with Python 3.11; the repository CI matrix remains authoritative for Python 3.11
+through 3.13:
 
 - `python -m ruff check .`: pass;
 - `python -m mypy`: pass, 18 source files across the primary and compatibility packages;
-- `python -m pytest`: 95 passed, 89.00% branch-aware coverage;
+- `python -m pytest`: 119 passed, 88.52% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
-  both `python -m` entry points, SQLite `run`, `runs list`, and privacy-safe `runs show`
-  passed;
+  both `python -m` entry points, SQLite `run`, `runs list`, privacy-safe `runs show`, and
+  the pause/approve/resume journey passed;
 - eight separate PowerShell job processes committed distinct runs to one installed-wheel
   SQLite database without loss;
 - wheel boundary inspection: 28 archive entries, 10 primary package entries, 10 thin
@@ -261,6 +286,7 @@ the artifact is rebuilt, and the document itself is included in the source archi
 ## Release disposition
 
 **Branded local release candidate with named owner gates.** The core product journey,
-MPL-2.0 licensing, Samsarix ownership, compatibility boundary, and local engineering
-gates are implemented. Registry publication remains gated by package-name confirmation,
-release provenance, and an explicit owner publication decision.
+durable pre-action review gate, MPL-2.0 licensing, Samsarix ownership, compatibility
+boundary, and local engineering gates are implemented. Registry publication remains
+gated by package-name confirmation, release provenance, and an explicit owner publication
+decision.

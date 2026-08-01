@@ -14,17 +14,26 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, Protocol, TypeGuard
 
 from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
-from .spec import WorkflowDefinition, WorkflowStep
+from .spec import (
+    MAX_APPROVAL_PROMPT_CHARACTERS,
+    MAX_STEPS,
+    WorkflowDefinition,
+    WorkflowStep,
+)
 
 MAX_RESULT_BYTES = 1_048_576
 ActionHandler = Callable[["ActionContext"], Any | Awaitable[Any]]
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+MAX_APPROVAL_ACTOR_CHARACTERS = 128
+MAX_APPROVAL_REASON_CHARACTERS = 1_000
+MAX_TIMESTAMP_CHARACTERS = 64
 
 
 class WorkflowExecutionError(RuntimeError):
@@ -33,6 +42,198 @@ class WorkflowExecutionError(RuntimeError):
 
 class EventDeliveryError(WorkflowExecutionError):
     """Raised when an event handler cannot accept a lifecycle event."""
+
+
+class ApprovalStatus(StrEnum):
+    """Durable state of a pre-action approval request."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class ApprovalDecisionKind(StrEnum):
+    """Supported operator decisions for a pending approval."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalDecision:
+    """One bounded operator decision supplied while resuming a paused run."""
+
+    request_id: str
+    decision: ApprovalDecisionKind
+    decided_by: str | None = None
+    reason: str | None = None
+
+    @classmethod
+    def approve(
+        cls,
+        request_id: str,
+        *,
+        decided_by: str | None = None,
+        reason: str | None = None,
+    ) -> ApprovalDecision:
+        """Create an approval decision."""
+        return cls(request_id, ApprovalDecisionKind.APPROVE, decided_by, reason)
+
+    @classmethod
+    def reject(
+        cls,
+        request_id: str,
+        *,
+        decided_by: str | None = None,
+        reason: str | None = None,
+    ) -> ApprovalDecision:
+        """Create a rejection decision."""
+        return cls(request_id, ApprovalDecisionKind.REJECT, decided_by, reason)
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Return the stable JSON representation."""
+        return {
+            "request_id": self.request_id,
+            "decision": self.decision.value,
+            "decided_by": self.decided_by,
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> ApprovalDecision:
+        """Validate and restore a decision from finite JSON data."""
+        if not isinstance(value, dict) or set(value) != {
+            "request_id",
+            "decision",
+            "decided_by",
+            "reason",
+        }:
+            raise WorkflowExecutionError("Approval decision has an invalid shape.")
+        request_id = value["request_id"]
+        try:
+            decision = ApprovalDecisionKind(value["decision"])
+        except (TypeError, ValueError) as exc:
+            raise WorkflowExecutionError("Approval decision kind is invalid.") from exc
+        decided_by = value["decided_by"]
+        reason = value["reason"]
+        if not _is_sha256(request_id):
+            raise WorkflowExecutionError("Approval decision request_id is invalid.")
+        _require_optional_bounded_text(
+            decided_by,
+            label="Approval decided_by",
+            maximum=MAX_APPROVAL_ACTOR_CHARACTERS,
+        )
+        _require_optional_bounded_text(
+            reason,
+            label="Approval reason",
+            maximum=MAX_APPROVAL_REASON_CHARACTERS,
+        )
+        return cls(
+            request_id=request_id,
+            decision=decision,
+            decided_by=decided_by,
+            reason=reason,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalRecord:
+    """A pending or decided approval bound to exact workflow state."""
+
+    request_id: str
+    step_id: str
+    prompt: str
+    context_digest: str
+    requested_at: str
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    decided_at: str | None = None
+    decided_by: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Return the stable checkpoint and report representation."""
+        return {
+            "request_id": self.request_id,
+            "step_id": self.step_id,
+            "prompt": self.prompt,
+            "context_digest": self.context_digest,
+            "requested_at": self.requested_at,
+            "status": self.status.value,
+            "decided_at": self.decided_at,
+            "decided_by": self.decided_by,
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> ApprovalRecord:
+        """Validate and restore an approval record from checkpoint JSON."""
+        expected = {
+            "request_id",
+            "step_id",
+            "prompt",
+            "context_digest",
+            "requested_at",
+            "status",
+            "decided_at",
+            "decided_by",
+            "reason",
+        }
+        if not isinstance(value, dict) or set(value) != expected:
+            raise WorkflowExecutionError("Checkpoint approval has an invalid shape.")
+        request_id = value["request_id"]
+        step_id = value["step_id"]
+        prompt = value["prompt"]
+        context_digest = value["context_digest"]
+        requested_at = value["requested_at"]
+        try:
+            status = ApprovalStatus(value["status"])
+        except (TypeError, ValueError) as exc:
+            raise WorkflowExecutionError("Checkpoint approval status is invalid.") from exc
+        decided_at = value["decided_at"]
+        decided_by = value["decided_by"]
+        reason = value["reason"]
+        if not _is_sha256(request_id) or not _is_sha256(context_digest):
+            raise WorkflowExecutionError("Checkpoint approval digests are invalid.")
+        if not isinstance(step_id, str) or not _RUN_ID.fullmatch(step_id):
+            raise WorkflowExecutionError("Checkpoint approval step_id is invalid.")
+        if (
+            not isinstance(prompt, str)
+            or not prompt.strip()
+            or len(prompt) > MAX_APPROVAL_PROMPT_CHARACTERS
+        ):
+            raise WorkflowExecutionError("Checkpoint approval prompt is invalid.")
+        _require_bounded_timestamp(requested_at, label="Checkpoint approval requested_at")
+        _require_optional_bounded_text(
+            decided_by,
+            label="Checkpoint approval decided_by",
+            maximum=MAX_APPROVAL_ACTOR_CHARACTERS,
+        )
+        _require_optional_bounded_text(
+            reason,
+            label="Checkpoint approval reason",
+            maximum=MAX_APPROVAL_REASON_CHARACTERS,
+        )
+        if status is ApprovalStatus.PENDING:
+            if decided_at is not None or decided_by is not None or reason is not None:
+                raise WorkflowExecutionError(
+                    "Pending checkpoint approval cannot contain decision metadata."
+                )
+        elif decided_at is None:
+            raise WorkflowExecutionError("Decided checkpoint approval needs decided_at.")
+        else:
+            _require_bounded_timestamp(decided_at, label="Checkpoint approval decided_at")
+        return cls(
+            request_id=request_id,
+            step_id=step_id,
+            prompt=prompt,
+            context_digest=context_digest,
+            requested_at=requested_at,
+            status=status,
+            decided_at=decided_at,
+            decided_by=decided_by,
+            reason=reason,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +247,7 @@ class ActionContext:
     attempt: int
     run_id: str = ""
     idempotency_key: str = ""
+    approval: ApprovalRecord | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +336,7 @@ class StepResult:
 
 @dataclass(frozen=True, slots=True)
 class WorkflowCheckpoint:
-    """Successful step results persisted for a specific workflow input."""
+    """Successful results and approvals persisted for a specific workflow input."""
 
     version: int
     run_id: str
@@ -142,10 +344,11 @@ class WorkflowCheckpoint:
     input_digest: str
     saved_at: str
     steps: tuple[StepResult, ...]
+    approvals: tuple[ApprovalRecord, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stable JSON representation."""
-        return {
+        value: dict[str, Any] = {
             "version": self.version,
             "run_id": self.run_id,
             "workflow_digest": self.workflow_digest,
@@ -153,19 +356,34 @@ class WorkflowCheckpoint:
             "saved_at": self.saved_at,
             "steps": [step.to_dict() for step in self.steps],
         }
+        if self.version >= 2:
+            value["approvals"] = [approval.to_dict() for approval in self.approvals]
+        return value
 
     @classmethod
     def from_dict(cls, value: Any) -> WorkflowCheckpoint:
         """Validate and restore a workflow checkpoint from decoded JSON."""
         if not isinstance(value, dict):
             raise WorkflowExecutionError("Checkpoint must be a JSON object.")
-        if value.get("version") != 1:
-            raise WorkflowExecutionError("Only checkpoint version 1 is supported.")
+        version = value.get("version")
+        if type(version) is not int or version not in (1, 2):
+            raise WorkflowExecutionError("Only checkpoint versions 1 and 2 are supported.")
+        if version == 2 and set(value) != {
+            "version",
+            "run_id",
+            "workflow_digest",
+            "input_digest",
+            "saved_at",
+            "steps",
+            "approvals",
+        }:
+            raise WorkflowExecutionError("Checkpoint version 2 has an invalid shape.")
         run_id = value.get("run_id")
         workflow_digest = value.get("workflow_digest")
         input_digest = value.get("input_digest")
         saved_at = value.get("saved_at")
         raw_steps = value.get("steps")
+        raw_approvals = value.get("approvals", [])
         if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
             raise WorkflowExecutionError("Checkpoint run_id is invalid.")
         if not _is_sha256(workflow_digest) or not _is_sha256(input_digest):
@@ -174,7 +392,16 @@ class WorkflowCheckpoint:
             raise WorkflowExecutionError("Checkpoint saved_at is invalid.")
         if not isinstance(raw_steps, list):
             raise WorkflowExecutionError("Checkpoint steps must be a JSON array.")
+        if not isinstance(raw_approvals, list):
+            raise WorkflowExecutionError("Checkpoint approvals must be a JSON array.")
+        if len(raw_steps) > MAX_STEPS or len(raw_approvals) > MAX_STEPS:
+            raise WorkflowExecutionError(
+                f"Checkpoint may contain at most {MAX_STEPS} steps and approvals."
+            )
+        if version == 1 and ("approvals" in value or raw_approvals):
+            raise WorkflowExecutionError("Checkpoint version 1 cannot contain approvals.")
         steps = tuple(StepResult.from_dict(step) for step in raw_steps)
+        approvals = tuple(ApprovalRecord.from_dict(item) for item in raw_approvals)
         if len({step.step_id for step in steps}) != len(steps):
             raise WorkflowExecutionError("Checkpoint contains duplicate step results.")
         if any(step.state is not StepState.SUCCEEDED for step in steps):
@@ -183,13 +410,18 @@ class WorkflowCheckpoint:
             step.attempts < 1 or step.started_at is None or step.error is not None for step in steps
         ):
             raise WorkflowExecutionError("Checkpoint contains an invalid successful step result.")
+        if len({record.request_id for record in approvals}) != len(approvals):
+            raise WorkflowExecutionError("Checkpoint contains duplicate approval requests.")
+        if len({record.step_id for record in approvals}) != len(approvals):
+            raise WorkflowExecutionError("Checkpoint contains duplicate step approvals.")
         return cls(
-            version=1,
+            version=version,
             run_id=run_id,
             workflow_digest=workflow_digest,
             input_digest=input_digest,
             saved_at=saved_at,
             steps=steps,
+            approvals=approvals,
         )
 
 
@@ -207,7 +439,7 @@ class CheckpointStore(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class WorkflowRunResult:
-    """Serializable result for a complete workflow run."""
+    """Serializable result for a complete or paused workflow invocation."""
 
     run_id: str
     workflow: str
@@ -218,6 +450,8 @@ class WorkflowRunResult:
     steps: tuple[StepResult, ...]
     resumed: bool = False
     restored_steps: int = 0
+    approvals: tuple[ApprovalRecord, ...] = ()
+    schema_version: int = 1
 
     @property
     def succeeded(self) -> bool:
@@ -226,7 +460,7 @@ class WorkflowRunResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stable JSON representation."""
-        return {
+        value: dict[str, Any] = {
             "run_id": self.run_id,
             "workflow": self.workflow,
             "status": self.status,
@@ -237,13 +471,18 @@ class WorkflowRunResult:
             "restored_steps": self.restored_steps,
             "steps": [step.to_dict() for step in self.steps],
         }
+        if self.schema_version >= 2:
+            value["schema_version"] = self.schema_version
+            value["approvals"] = [approval.to_dict() for approval in self.approvals]
+        return value
 
 
 class _EventDispatcher:
     """Serialize event delivery for one run, including concurrent steps."""
 
-    def __init__(self, handlers: tuple[EventHandler, ...]) -> None:
+    def __init__(self, handlers: tuple[EventHandler, ...], *, schema_version: int = 1) -> None:
         self._handlers = handlers
+        self._schema_version = schema_version
         self._sequence = 0
         self._lock = asyncio.Lock()
 
@@ -259,6 +498,8 @@ class _EventDispatcher:
         duration_ms: float | None = None,
         error_type: str | None = None,
         resumed: bool = False,
+        approval_id: str | None = None,
+        decision: str | None = None,
     ) -> None:
         if not self._handlers:
             return
@@ -276,6 +517,9 @@ class _EventDispatcher:
                 duration_ms=duration_ms,
                 error_type=error_type,
                 resumed=resumed,
+                schema_version=self._schema_version,
+                approval_id=approval_id,
+                decision=decision,
             )
             for handler in self._handlers:
                 try:
@@ -342,6 +586,7 @@ class WorkflowRunner:
         run_id: str | None = None,
         checkpoint_store: CheckpointStore | None = None,
         resume: bool = False,
+        approval_decisions: Iterable[ApprovalDecision] | None = None,
     ) -> WorkflowRunResult:
         """Run or resume a workflow and return a terminal-state report.
 
@@ -352,15 +597,31 @@ class WorkflowRunner:
         """
         workflow.require_valid()
         self._require_json_value(workflow_input, label="workflow input")
+        raw_decisions = tuple(approval_decisions or ())
+        if any(not isinstance(decision, ApprovalDecision) for decision in raw_decisions):
+            raise WorkflowExecutionError("approval_decisions must contain ApprovalDecision values.")
+        try:
+            decisions = tuple(
+                ApprovalDecision.from_dict(decision.to_dict()) for decision in raw_decisions
+            )
+        except AttributeError as exc:
+            raise WorkflowExecutionError("Approval decision is invalid.") from exc
+        if len({decision.request_id for decision in decisions}) != len(decisions):
+            raise WorkflowExecutionError("Approval decisions contain duplicate request IDs.")
+        if decisions and not resume:
+            raise WorkflowExecutionError("Approval decisions require resume=True.")
         if resume and checkpoint_store is None:
             raise WorkflowExecutionError("resume requires a checkpoint store.")
         if resume and run_id is None:
             raise WorkflowExecutionError("resume requires an explicit run_id.")
+        has_approval_gates = any(step.approval is not None for step in workflow.steps)
+        if has_approval_gates and checkpoint_store is None:
+            raise WorkflowExecutionError("Approval gates require a checkpoint store.")
+        if has_approval_gates and run_id is None:
+            raise WorkflowExecutionError("Approval gates require an explicit run_id.")
         effective_run_id = run_id or str(uuid.uuid4())
         if not _RUN_ID.fullmatch(effective_run_id):
-            raise WorkflowExecutionError(
-                "run_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}."
-            )
+            raise WorkflowExecutionError("run_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.")
         missing = sorted({step.action for step in workflow.steps} - self._actions.keys())
         if missing:
             raise WorkflowExecutionError(
@@ -369,10 +630,14 @@ class WorkflowRunner:
 
         started_at = _utc_now()
         started_clock = time.perf_counter()
-        dispatcher = _EventDispatcher(tuple(self._event_handlers))
+        dispatcher = _EventDispatcher(
+            tuple(self._event_handlers),
+            schema_version=workflow.version,
+        )
         ordered_steps = {step.id: step for step in workflow.steps}
         pending = set(ordered_steps)
         results: dict[str, StepResult] = {}
+        approvals: dict[str, ApprovalRecord] = {}
         workflow_digest = _json_digest(workflow.to_dict())
         input_digest = _json_digest(workflow_input)
         checkpoint = (
@@ -394,6 +659,9 @@ class WorkflowRunner:
                 ordered_steps=ordered_steps,
                 results=results,
                 pending=pending,
+                approvals=approvals,
+                workflow_version=workflow.version,
+                run_id=effective_run_id,
             )
         elif checkpoint is not None:
             raise WorkflowExecutionError(
@@ -421,6 +689,60 @@ class WorkflowRunner:
                     duration_ms=restored.duration_ms,
                     resumed=True,
                 )
+
+        if decisions:
+            applied: list[tuple[ApprovalRecord, ApprovalDecision]] = []
+            for decision in decisions:
+                record = approvals.get(decision.request_id)
+                if record is None:
+                    raise WorkflowExecutionError(
+                        f"Approval request {decision.request_id!r} is not pending for this run."
+                    )
+                if record.status is not ApprovalStatus.PENDING:
+                    raise WorkflowExecutionError(
+                        f"Approval request {decision.request_id!r} is already decided."
+                    )
+                approvals[decision.request_id] = replace(
+                    record,
+                    status=(
+                        ApprovalStatus.APPROVED
+                        if decision.decision is ApprovalDecisionKind.APPROVE
+                        else ApprovalStatus.REJECTED
+                    ),
+                    decided_at=_utc_now(),
+                    decided_by=decision.decided_by,
+                    reason=decision.reason,
+                )
+                applied.append((record, decision))
+            if checkpoint_store is None:
+                raise WorkflowExecutionError("Approval decisions require a checkpoint store.")
+            await self._save_checkpoint(
+                checkpoint_store,
+                self._build_checkpoint(
+                    workflow,
+                    effective_run_id,
+                    workflow_digest,
+                    input_digest,
+                    results,
+                    approvals,
+                ),
+            )
+            for record, decision in applied:
+                await dispatcher.emit(
+                    WorkflowEventKind.APPROVAL_RECORDED,
+                    run_id=effective_run_id,
+                    workflow=workflow.name,
+                    step_id=record.step_id,
+                    resumed=True,
+                    approval_id=record.request_id,
+                    decision=decision.decision.value,
+                )
+            await dispatcher.emit(
+                WorkflowEventKind.CHECKPOINT_SAVED,
+                run_id=effective_run_id,
+                workflow=workflow.name,
+                resumed=True,
+            )
 
         try:
             while pending:
@@ -459,8 +781,7 @@ class WorkflowRunner:
                     for step in workflow.steps
                     if step.id in pending
                     and all(
-                        dependency in results
-                        and results[dependency].state is StepState.SUCCEEDED
+                        dependency in results and results[dependency].state is StepState.SUCCEEDED
                         for dependency in step.dependencies
                     )
                 ]
@@ -470,6 +791,187 @@ class WorkflowRunner:
                             "Workflow stalled despite successful validation."
                         )
                     break
+
+                denied = [
+                    step
+                    for step in ready
+                    if step.approval is not None
+                    and (record := _approval_for_step(approvals, step.id)) is not None
+                    and record.status in (ApprovalStatus.REJECTED, ApprovalStatus.CANCELLED)
+                ]
+                if denied:
+                    rejected_ids = {
+                        step.id
+                        for step in denied
+                        if (record := _approval_for_step(approvals, step.id)) is not None
+                        and record.status is ApprovalStatus.REJECTED
+                    }
+                    cancelled_records: list[ApprovalRecord] = []
+                    for request_id, record in tuple(approvals.items()):
+                        if (
+                            record.status is ApprovalStatus.PENDING
+                            and record.step_id not in rejected_ids
+                        ):
+                            cancelled = replace(
+                                record,
+                                status=ApprovalStatus.CANCELLED,
+                                decided_at=_utc_now(),
+                                reason="Cancelled because another approval was rejected.",
+                            )
+                            approvals[request_id] = cancelled
+                            cancelled_records.append(cancelled)
+                    if cancelled_records:
+                        if checkpoint_store is None:
+                            raise WorkflowExecutionError(
+                                "Approval cancellation requires a checkpoint store."
+                            )
+                        await self._save_checkpoint(
+                            checkpoint_store,
+                            self._build_checkpoint(
+                                workflow,
+                                effective_run_id,
+                                workflow_digest,
+                                input_digest,
+                                results,
+                                approvals,
+                            ),
+                        )
+                        for record in cancelled_records:
+                            await dispatcher.emit(
+                                WorkflowEventKind.APPROVAL_RECORDED,
+                                run_id=effective_run_id,
+                                workflow=workflow.name,
+                                step_id=record.step_id,
+                                resumed=resume,
+                                approval_id=record.request_id,
+                                decision="cancel",
+                            )
+                        await dispatcher.emit(
+                            WorkflowEventKind.CHECKPOINT_SAVED,
+                            run_id=effective_run_id,
+                            workflow=workflow.name,
+                            resumed=resume,
+                        )
+                    for step in workflow.steps:
+                        if step.id not in pending:
+                            continue
+                        if step.id in rejected_ids:
+                            record = _approval_for_step(approvals, step.id)
+                            if record is None:
+                                raise WorkflowExecutionError(
+                                    f"Rejected step {step.id!r} has no approval record."
+                                )
+                            result = self._terminal_without_run(
+                                step,
+                                StepState.REJECTED,
+                                "ApprovalRejected",
+                                record.reason or "The approval request was rejected.",
+                                finished_at=record.decided_at,
+                            )
+                            results[step.id] = result
+                            pending.remove(step.id)
+                            await dispatcher.emit(
+                                WorkflowEventKind.STEP_REJECTED,
+                                run_id=effective_run_id,
+                                workflow=workflow.name,
+                                step_id=step.id,
+                                state=StepState.REJECTED,
+                                error_type="ApprovalRejected",
+                                resumed=resume,
+                                approval_id=record.request_id,
+                                decision=ApprovalDecisionKind.REJECT.value,
+                            )
+                        else:
+                            blocked = self._terminal_without_run(
+                                step,
+                                StepState.BLOCKED,
+                                "ApprovalRejected",
+                                "Not started because an approval was rejected.",
+                            )
+                            results[step.id] = blocked
+                            pending.remove(step.id)
+                            await dispatcher.emit(
+                                WorkflowEventKind.STEP_BLOCKED,
+                                run_id=effective_run_id,
+                                workflow=workflow.name,
+                                step_id=step.id,
+                                state=StepState.BLOCKED,
+                                error_type="ApprovalRejected",
+                                resumed=resume,
+                            )
+                    break
+
+                waiting: list[ApprovalRecord] = []
+                created_approval = False
+                for step in ready:
+                    if step.approval is None:
+                        continue
+                    dependencies = {
+                        dependency: results[dependency].output for dependency in step.dependencies
+                    }
+                    record = _approval_for_step(approvals, step.id)
+                    expected = _approval_record(
+                        run_id=effective_run_id,
+                        workflow_digest=workflow_digest,
+                        input_digest=input_digest,
+                        step=step,
+                        dependencies=dependencies,
+                        requested_at=(record.requested_at if record is not None else None),
+                    )
+                    if record is None:
+                        approvals[expected.request_id] = expected
+                        record = expected
+                        created_approval = True
+                    elif not _same_approval_request(record, expected):
+                        raise WorkflowExecutionError(
+                            f"Checkpoint approval does not match step {step.id!r}."
+                        )
+                    if record.status is ApprovalStatus.PENDING:
+                        waiting.append(record)
+
+                if waiting:
+                    if checkpoint_store is None:
+                        raise WorkflowExecutionError(
+                            "Approval requests require a checkpoint store."
+                        )
+                    if created_approval:
+                        await self._save_checkpoint(
+                            checkpoint_store,
+                            self._build_checkpoint(
+                                workflow,
+                                effective_run_id,
+                                workflow_digest,
+                                input_digest,
+                                results,
+                                approvals,
+                            ),
+                        )
+                        await dispatcher.emit(
+                            WorkflowEventKind.CHECKPOINT_SAVED,
+                            run_id=effective_run_id,
+                            workflow=workflow.name,
+                            resumed=resume,
+                        )
+                    for record in waiting:
+                        await dispatcher.emit(
+                            WorkflowEventKind.APPROVAL_REQUESTED,
+                            run_id=effective_run_id,
+                            workflow=workflow.name,
+                            step_id=record.step_id,
+                            resumed=resume,
+                            approval_id=record.request_id,
+                        )
+                    return await self._paused_result(
+                        workflow=workflow,
+                        run_id=effective_run_id,
+                        started_at=started_at,
+                        started_clock=started_clock,
+                        results=results,
+                        approvals=approvals,
+                        restored_steps=restored_steps,
+                        resumed=resume,
+                        dispatcher=dispatcher,
+                    )
 
                 tasks = [
                     asyncio.create_task(
@@ -482,6 +984,7 @@ class WorkflowRunner:
                                 dependency: results[dependency].output
                                 for dependency in step.dependencies
                             },
+                            _approval_for_step(approvals, step.id),
                             semaphore,
                             dispatcher,
                         )
@@ -505,18 +1008,13 @@ class WorkflowRunner:
                 if checkpoint_store is not None:
                     await self._save_checkpoint(
                         checkpoint_store,
-                        WorkflowCheckpoint(
-                            version=1,
-                            run_id=effective_run_id,
-                            workflow_digest=workflow_digest,
-                            input_digest=input_digest,
-                            saved_at=_utc_now(),
-                            steps=tuple(
-                                results[step.id]
-                                for step in workflow.steps
-                                if step.id in results
-                                and results[step.id].state is StepState.SUCCEEDED
-                            ),
+                        self._build_checkpoint(
+                            workflow,
+                            effective_run_id,
+                            workflow_digest,
+                            input_digest,
+                            results,
+                            approvals,
                         ),
                     )
                     await dispatcher.emit(
@@ -551,9 +1049,17 @@ class WorkflowRunner:
             finished_at = _utc_now()
             ordered_results = tuple(results[step.id] for step in workflow.steps)
             status = (
-                "succeeded"
-                if all(result.state is StepState.SUCCEEDED for result in ordered_results)
-                else "failed"
+                "failed"
+                if any(result.state is StepState.FAILED for result in ordered_results)
+                else (
+                    "succeeded"
+                    if all(result.state is StepState.SUCCEEDED for result in ordered_results)
+                    else (
+                        "rejected"
+                        if any(result.state is StepState.REJECTED for result in ordered_results)
+                        else "failed"
+                    )
+                )
             )
             duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)
             run_result = WorkflowRunResult(
@@ -566,11 +1072,19 @@ class WorkflowRunner:
                 steps=ordered_results,
                 resumed=resume,
                 restored_steps=restored_steps,
+                approvals=_ordered_approvals(workflow, approvals),
+                schema_version=workflow.version,
             )
             await dispatcher.emit(
-                WorkflowEventKind.RUN_SUCCEEDED
-                if run_result.succeeded
-                else WorkflowEventKind.RUN_FAILED,
+                (
+                    WorkflowEventKind.RUN_SUCCEEDED
+                    if run_result.succeeded
+                    else (
+                        WorkflowEventKind.RUN_REJECTED
+                        if run_result.status == "rejected"
+                        else WorkflowEventKind.RUN_FAILED
+                    )
+                ),
                 run_id=effective_run_id,
                 workflow=workflow.name,
                 duration_ms=duration_ms,
@@ -627,7 +1141,16 @@ class WorkflowRunner:
         ordered_steps: Mapping[str, WorkflowStep],
         results: dict[str, StepResult],
         pending: set[str],
+        approvals: dict[str, ApprovalRecord],
+        workflow_version: int,
+        run_id: str,
     ) -> None:
+        if checkpoint.run_id != run_id:
+            raise WorkflowExecutionError("Checkpoint run_id does not match the requested run.")
+        if checkpoint.version != workflow_version:
+            raise WorkflowExecutionError(
+                "Checkpoint version does not match the workflow schema version."
+            )
         if checkpoint.workflow_digest != workflow_digest:
             raise WorkflowExecutionError(
                 "Checkpoint workflow does not match the requested workflow definition."
@@ -657,6 +1180,94 @@ class WorkflowRunner:
             )
             results[result.step_id] = result
             pending.remove(result.step_id)
+        for record in checkpoint.approvals:
+            step = ordered_steps.get(record.step_id)
+            if step is None or step.approval is None:
+                raise WorkflowExecutionError(
+                    f"Checkpoint approval references ungated step {record.step_id!r}."
+                )
+            if any(dependency not in restored_ids for dependency in step.dependencies):
+                raise WorkflowExecutionError(
+                    f"Checkpoint approval is missing a dependency for step {record.step_id!r}."
+                )
+            expected = _approval_record(
+                run_id=run_id,
+                workflow_digest=workflow_digest,
+                input_digest=input_digest,
+                step=step,
+                dependencies={
+                    dependency: results[dependency].output for dependency in step.dependencies
+                },
+                requested_at=record.requested_at,
+            )
+            if not _same_approval_request(record, expected):
+                raise WorkflowExecutionError(
+                    f"Checkpoint approval does not match step {record.step_id!r}."
+                )
+            if record.step_id in restored_ids and record.status is not ApprovalStatus.APPROVED:
+                raise WorkflowExecutionError(
+                    f"Successful step {record.step_id!r} lacks durable approval."
+                )
+            approvals[record.request_id] = record
+
+    @staticmethod
+    def _build_checkpoint(
+        workflow: WorkflowDefinition,
+        run_id: str,
+        workflow_digest: str,
+        input_digest: str,
+        results: Mapping[str, StepResult],
+        approvals: Mapping[str, ApprovalRecord],
+    ) -> WorkflowCheckpoint:
+        return WorkflowCheckpoint(
+            version=workflow.version,
+            run_id=run_id,
+            workflow_digest=workflow_digest,
+            input_digest=input_digest,
+            saved_at=_utc_now(),
+            steps=tuple(
+                results[step.id]
+                for step in workflow.steps
+                if step.id in results and results[step.id].state is StepState.SUCCEEDED
+            ),
+            approvals=_ordered_approvals(workflow, approvals),
+        )
+
+    async def _paused_result(
+        self,
+        *,
+        workflow: WorkflowDefinition,
+        run_id: str,
+        started_at: str,
+        started_clock: float,
+        results: Mapping[str, StepResult],
+        approvals: Mapping[str, ApprovalRecord],
+        restored_steps: int,
+        resumed: bool,
+        dispatcher: _EventDispatcher,
+    ) -> WorkflowRunResult:
+        duration_ms = round((time.perf_counter() - started_clock) * 1_000, 3)
+        result = WorkflowRunResult(
+            run_id=run_id,
+            workflow=workflow.name,
+            status="paused",
+            started_at=started_at,
+            finished_at=_utc_now(),
+            duration_ms=duration_ms,
+            steps=tuple(results[step.id] for step in workflow.steps if step.id in results),
+            resumed=resumed,
+            restored_steps=restored_steps,
+            approvals=_ordered_approvals(workflow, approvals),
+            schema_version=workflow.version,
+        )
+        await dispatcher.emit(
+            WorkflowEventKind.RUN_PAUSED,
+            run_id=run_id,
+            workflow=workflow.name,
+            duration_ms=duration_ms,
+            resumed=resumed,
+        )
+        return result
 
     async def _run_step(
         self,
@@ -665,9 +1276,14 @@ class WorkflowRunner:
         step: WorkflowStep,
         workflow_input: Any,
         dependencies: Mapping[str, Any],
+        approval: ApprovalRecord | None,
         semaphore: asyncio.Semaphore,
         dispatcher: _EventDispatcher,
     ) -> StepResult:
+        if step.approval is not None and (
+            approval is None or approval.status is not ApprovalStatus.APPROVED
+        ):
+            raise WorkflowExecutionError(f"Step {step.id!r} cannot start without durable approval.")
         async with semaphore:
             started_at = _utc_now()
             started_clock = time.perf_counter()
@@ -694,6 +1310,7 @@ class WorkflowRunner:
                     attempt=attempt,
                     run_id=run_id,
                     idempotency_key=f"{run_id}:{step.id}",
+                    approval=approval,
                 )
                 try:
                     output = await asyncio.wait_for(
@@ -818,6 +1435,8 @@ class WorkflowRunner:
         state: StepState,
         error_type: str,
         message: str,
+        *,
+        finished_at: str | None = None,
     ) -> StepResult:
         return StepResult(
             step_id=step.id,
@@ -826,7 +1445,7 @@ class WorkflowRunner:
             state=state,
             attempts=0,
             started_at=None,
-            finished_at=_utc_now(),
+            finished_at=finished_at or _utc_now(),
             duration_ms=0.0,
             error={"type": error_type, "message": message},
         )
@@ -845,6 +1464,116 @@ def _json_digest(value: Any) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _approval_record(
+    *,
+    run_id: str,
+    workflow_digest: str,
+    input_digest: str,
+    step: WorkflowStep,
+    dependencies: Mapping[str, Any],
+    requested_at: str | None = None,
+) -> ApprovalRecord:
+    if step.approval is None:
+        raise WorkflowExecutionError(f"Step {step.id!r} has no approval policy.")
+    context_digest = _json_digest(
+        {
+            "workflow_digest": workflow_digest,
+            "input_digest": input_digest,
+            "step_id": step.id,
+            "dependencies": dependencies,
+        }
+    )
+    request_id = _json_digest({"run_id": run_id, "context_digest": context_digest})
+    return ApprovalRecord(
+        request_id=request_id,
+        step_id=step.id,
+        prompt=step.approval.prompt,
+        context_digest=context_digest,
+        requested_at=requested_at or _utc_now(),
+    )
+
+
+def _same_approval_request(left: ApprovalRecord, right: ApprovalRecord) -> bool:
+    return (
+        left.request_id == right.request_id
+        and left.step_id == right.step_id
+        and left.prompt == right.prompt
+        and left.context_digest == right.context_digest
+        and left.requested_at == right.requested_at
+    )
+
+
+def _approval_for_step(
+    approvals: Mapping[str, ApprovalRecord],
+    step_id: str,
+) -> ApprovalRecord | None:
+    return next((record for record in approvals.values() if record.step_id == step_id), None)
+
+
+def _ordered_approvals(
+    workflow: WorkflowDefinition,
+    approvals: Mapping[str, ApprovalRecord],
+) -> tuple[ApprovalRecord, ...]:
+    by_step = {record.step_id: record for record in approvals.values()}
+    return tuple(by_step[step.id] for step in workflow.steps if step.id in by_step)
+
+
+def _require_optional_bounded_text(value: Any, *, label: str, maximum: int) -> None:
+    if value is not None and (not isinstance(value, str) or len(value) > maximum):
+        raise WorkflowExecutionError(
+            f"{label} must be null or a string of at most {maximum} characters."
+        )
+
+
+def _require_bounded_timestamp(value: Any, *, label: str) -> None:
+    if not isinstance(value, str) or not value or len(value) > MAX_TIMESTAMP_CHARACTERS:
+        raise WorkflowExecutionError(
+            f"{label} must be a non-empty string of at most {MAX_TIMESTAMP_CHARACTERS} characters."
+        )
+
+
+def _require_monotonic_checkpoint(
+    existing: WorkflowCheckpoint,
+    candidate: WorkflowCheckpoint,
+) -> None:
+    if (
+        existing.version != candidate.version
+        or existing.workflow_digest != candidate.workflow_digest
+        or existing.input_digest != candidate.input_digest
+    ):
+        raise WorkflowExecutionError("Checkpoint identity cannot change for a run.")
+    existing_steps = {step.step_id: step for step in existing.steps}
+    candidate_steps = {step.step_id: step for step in candidate.steps}
+    if not existing_steps.keys() <= candidate_steps.keys():
+        raise WorkflowExecutionError("Checkpoint cannot regress successful steps.")
+    for step_id, result in existing_steps.items():
+        if result.to_dict() != candidate_steps[step_id].to_dict():
+            raise WorkflowExecutionError(
+                f"Checkpoint contains divergent result for step {step_id!r}."
+            )
+    existing_approvals = {record.request_id: record for record in existing.approvals}
+    candidate_approvals = {record.request_id: record for record in candidate.approvals}
+    if not existing_approvals.keys() <= candidate_approvals.keys():
+        raise WorkflowExecutionError("Checkpoint cannot remove approval records.")
+    immutable = (
+        "request_id",
+        "step_id",
+        "prompt",
+        "context_digest",
+        "requested_at",
+    )
+    for request_id, record in existing_approvals.items():
+        updated = candidate_approvals[request_id]
+        original_value = record.to_dict()
+        updated_value = updated.to_dict()
+        if any(original_value[field] != updated_value[field] for field in immutable):
+            raise WorkflowExecutionError(f"Checkpoint contains divergent approval {request_id!r}.")
+        if record.status is not ApprovalStatus.PENDING and original_value != updated_value:
+            raise WorkflowExecutionError(
+                f"Checkpoint cannot change decided approval {request_id!r}."
+            )
 
 
 def _is_sha256(value: Any) -> TypeGuard[str]:
