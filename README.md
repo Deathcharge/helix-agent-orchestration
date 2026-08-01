@@ -25,14 +25,16 @@ not yet been published to a package index.
   verified successful steps.
 - Stable per-step idempotency keys for safely designed external side effects.
 - Ordered, schema-versioned lifecycle events for application-owned logs and metrics.
+- Schema-v2 pre-action approval gates with durable approve/reject decisions and a strict
+  no-handler-before-approval barrier.
 - A separately installed consumer proving resume, idempotency, and event contracts across
   a real package boundary.
 - JSON-safe inputs, outputs, errors, and terminal step states.
 - A provider-free CLI example using four deterministic built-in actions.
 - No runtime dependencies, network calls, telemetry, credentials, or implicit persistence.
 
-Distributed workers, process isolation, human approval pauses, provider adapters, and a
-remote API are deliberately out of scope for 0.1.
+Distributed workers, process isolation, dynamic mid-handler interrupts, provider adapters,
+and a remote API are deliberately out of scope for 0.1.
 
 ## Fastest successful path
 
@@ -59,12 +61,14 @@ You can use `python -m samsarix_orchestration` instead of the installed command.
 ```text
 samsarix-orchestration --version
 samsarix-orchestration actions
-samsarix-orchestration init PATH [--force]
+samsarix-orchestration init PATH [--force] [--approval]
 samsarix-orchestration validate PATH [--json]
 samsarix-orchestration run PATH [--input JSON | --input-file PATH]
                                  [--output PATH] [--force-output]
                                  [--checkpoint-dir PATH | --checkpoint-db PATH]
                                  [--run-id ID] [--resume]
+                                 [--approve REQUEST_ID] [--reject REQUEST_ID]
+                                 [--decided-by LABEL] [--decision-reason TEXT]
                                  [--events]
 samsarix-orchestration runs list DATABASE [--limit N] [--json]
 samsarix-orchestration runs show DATABASE RUN_ID [--include-outputs]
@@ -76,6 +80,7 @@ Exit codes are stable:
 - `0`: validation or execution succeeded;
 - `1`: workflow execution failed;
 - `2`: usage, workflow, input, or output validation failed;
+- `3`: execution paused before a gated action and awaits an approval decision;
 - `130`: the user interrupted execution.
 
 Workflow and input files are limited to 1 MiB. Each step result is also limited to
@@ -161,6 +166,49 @@ counters using only the standard library.
 Ordering is per run. If one runner executes multiple runs concurrently, a shared sync
 handler can be called from different worker threads and must provide its own cross-run
 thread safety.
+
+## Pause before high-risk actions
+
+Approval gates are static pre-action barriers in workflow schema version 2. Generate a
+runnable example and start it with durable storage:
+
+```bash
+samsarix-orchestration init approval.json --approval
+samsarix-orchestration run approval.json \
+  --checkpoint-db .samsarix-runs/approvals.db \
+  --run-id release-2026-08-01
+```
+
+The command exits with `3`, reports `status: "paused"`, and prints a 64-character request
+ID. No handler in that ready batch starts. Review the completed preparation-step outputs,
+then resume with exactly one decision:
+
+```bash
+samsarix-orchestration run approval.json \
+  --checkpoint-db .samsarix-runs/approvals.db \
+  --run-id release-2026-08-01 --resume \
+  --approve REQUEST_ID
+```
+
+Use `--reject REQUEST_ID` to terminate the gated step without invoking its handler. When
+several requests are pending, the flags may be repeated; one rejection cancels other
+pending requests and fail-fast blocks remaining work.
+
+Python applications resume with `ApprovalDecision.approve(...)` or
+`ApprovalDecision.reject(...)`. The optional `decided_by` and `reason` fields are bounded
+audit labels supplied by the caller; Samsarix records but does not authenticate them. An
+approved handler receives the durable record as `context.approval`.
+
+The runtime commits a decision before invoking an approved handler. Each request is bound
+to the run ID and canonical workflow, input, and dependency-output state. Competing
+SQLite decisions serialize, and only one divergent decision can win. Schema v2 rejects
+unknown workflow fields; older Samsarix runtimes reject version 2 rather than ignoring
+an approval gate.
+
+This primitive records authorization decisions but does not authenticate the person making
+them. Applications own reviewer authentication, authorization policy, presentation of
+prepared outputs, and protection of checkpoint files. Approval request IDs are identifiers,
+not bearer secrets.
 
 ## Resume expensive or side-effecting work
 

@@ -4,8 +4,10 @@
 """Compatibility exports for :mod:`samsarix_orchestration.spec`."""
 
 from samsarix_orchestration.spec import (
+    MAX_APPROVAL_PROMPT_CHARACTERS,
     MAX_STEPS,
     MAX_WORKFLOW_BYTES,
+    ApprovalPolicy,
     ValidationIssue,
     WorkflowDefinition,
     WorkflowSpecError,
@@ -15,8 +17,10 @@ from samsarix_orchestration.spec import (
 )
 
 __all__ = [
+    "MAX_APPROVAL_PROMPT_CHARACTERS",
     "MAX_STEPS",
     "MAX_WORKFLOW_BYTES",
+    "ApprovalPolicy",
     "ValidationIssue",
     "WorkflowDefinition",
     "WorkflowSpecError",

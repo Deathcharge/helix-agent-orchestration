@@ -110,7 +110,7 @@ def test_memory_store_returns_isolated_validated_snapshots() -> None:
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        (("version",), 2, "version 1"),
+        (("version",), 3, "versions 1 and 2"),
         (("run_id",), "../bad", "run_id"),
         (("workflow_digest",), "bad", "digests"),
         (("saved_at",), 1, "saved_at"),

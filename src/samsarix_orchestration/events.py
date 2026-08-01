@@ -20,6 +20,7 @@ class StepState(StrEnum):
     FAILED = "failed"
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"
 
 
 class WorkflowEventKind(StrEnum):
@@ -34,6 +35,11 @@ class WorkflowEventKind(StrEnum):
     STEP_BLOCKED = "step_blocked"
     STEP_CANCELLED = "step_cancelled"
     CHECKPOINT_SAVED = "checkpoint_saved"
+    APPROVAL_REQUESTED = "approval_requested"
+    APPROVAL_RECORDED = "approval_recorded"
+    STEP_REJECTED = "step_rejected"
+    RUN_PAUSED = "run_paused"
+    RUN_REJECTED = "run_rejected"
     RUN_SUCCEEDED = "run_succeeded"
     RUN_FAILED = "run_failed"
     RUN_CANCELLED = "run_cancelled"
@@ -60,10 +66,12 @@ class WorkflowEvent:
     error_type: str | None = None
     resumed: bool = False
     schema_version: int = 1
+    approval_id: str | None = None
+    decision: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the stable JSON representation, including explicit nulls."""
-        return {
+        value: dict[str, object] = {
             "schema_version": self.schema_version,
             "sequence": self.sequence,
             "kind": self.kind.value,
@@ -77,6 +85,10 @@ class WorkflowEvent:
             "error_type": self.error_type,
             "resumed": self.resumed,
         }
+        if self.schema_version >= 2:
+            value["approval_id"] = self.approval_id
+            value["decision"] = self.decision
+        return value
 
 
 EventHandler: TypeAlias = Callable[[WorkflowEvent], None | Awaitable[None]]

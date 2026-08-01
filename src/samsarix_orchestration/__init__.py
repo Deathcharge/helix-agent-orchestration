@@ -10,7 +10,13 @@ from .checkpoints import (
 )
 from .events import EventHandler, StepState, WorkflowEvent, WorkflowEventKind
 from .runtime import (
+    MAX_APPROVAL_ACTOR_CHARACTERS,
+    MAX_APPROVAL_REASON_CHARACTERS,
     ActionContext,
+    ApprovalDecision,
+    ApprovalDecisionKind,
+    ApprovalRecord,
+    ApprovalStatus,
     CheckpointStore,
     EventDeliveryError,
     StepResult,
@@ -20,7 +26,9 @@ from .runtime import (
     WorkflowRunResult,
 )
 from .spec import (
+    MAX_APPROVAL_PROMPT_CHARACTERS,
     MAX_WORKFLOW_BYTES,
+    ApprovalPolicy,
     ValidationIssue,
     WorkflowDefinition,
     WorkflowSpecError,
@@ -37,9 +45,17 @@ from .sqlite_store import (
 
 __all__ = [
     "MAX_CHECKPOINT_BYTES",
+    "MAX_APPROVAL_PROMPT_CHARACTERS",
+    "MAX_APPROVAL_ACTOR_CHARACTERS",
+    "MAX_APPROVAL_REASON_CHARACTERS",
     "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
     "ActionContext",
+    "ApprovalDecision",
+    "ApprovalDecisionKind",
+    "ApprovalPolicy",
+    "ApprovalRecord",
+    "ApprovalStatus",
     "CheckpointSummary",
     "CheckpointStore",
     "EventDeliveryError",

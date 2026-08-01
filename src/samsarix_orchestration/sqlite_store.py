@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from .checkpoints import MAX_CHECKPOINT_BYTES
-from .runtime import WorkflowCheckpoint, WorkflowExecutionError
+from .runtime import (
+    WorkflowCheckpoint,
+    WorkflowExecutionError,
+    _require_monotonic_checkpoint,
+)
 
 SQLITE_APPLICATION_ID = 0x53584F52
 SQLITE_SCHEMA_VERSION = 1
@@ -153,7 +157,7 @@ class SqliteCheckpointStore:
                     run_id=validated.run_id,
                     expected_bytes=size,
                 )
-                _require_monotonic_progress(existing, validated)
+                _require_monotonic_checkpoint(existing, validated)
 
             connection.execute(
                 """
@@ -427,26 +431,6 @@ def _encode_checkpoint(checkpoint: WorkflowCheckpoint) -> bytes:
     ).encode("utf-8")
 
 
-def _require_monotonic_progress(
-    existing: WorkflowCheckpoint,
-    candidate: WorkflowCheckpoint,
-) -> None:
-    if (
-        existing.workflow_digest != candidate.workflow_digest
-        or existing.input_digest != candidate.input_digest
-    ):
-        raise WorkflowExecutionError("SQLite checkpoint identity cannot change for a run.")
-    existing_steps = {step.step_id: step for step in existing.steps}
-    candidate_steps = {step.step_id: step for step in candidate.steps}
-    if not existing_steps.keys() <= candidate_steps.keys():
-        raise WorkflowExecutionError("SQLite checkpoint cannot regress successful steps.")
-    for step_id, result in existing_steps.items():
-        if result.to_dict() != candidate_steps[step_id].to_dict():
-            raise WorkflowExecutionError(
-                f"SQLite checkpoint contains divergent result for step {step_id!r}."
-            )
-
-
 def _validated_size(declared: Any, actual: Any, maximum: int) -> int:
     if type(declared) is not int or type(actual) is not int or declared != actual:
         raise WorkflowExecutionError("SQLite checkpoint byte length is invalid.")
@@ -459,9 +443,7 @@ def _validated_size(declared: Any, actual: Any, maximum: int) -> int:
 
 def _require_run_id(run_id: str) -> None:
     if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
-        raise ValueError(
-            "run_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}"
-        )
+        raise ValueError("run_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
 def _pragma_int(connection: sqlite3.Connection, name: str) -> int:

@@ -7,12 +7,20 @@ New applications should import :mod:`samsarix_orchestration`.
 """
 
 from samsarix_orchestration import (
+    MAX_APPROVAL_ACTOR_CHARACTERS,
+    MAX_APPROVAL_PROMPT_CHARACTERS,
+    MAX_APPROVAL_REASON_CHARACTERS,
     MAX_CHECKPOINT_BYTES,
     MAX_LIST_LIMIT,
     MAX_WORKFLOW_BYTES,
     SQLITE_APPLICATION_ID,
     SQLITE_SCHEMA_VERSION,
     ActionContext,
+    ApprovalDecision,
+    ApprovalDecisionKind,
+    ApprovalPolicy,
+    ApprovalRecord,
+    ApprovalStatus,
     CheckpointStore,
     CheckpointSummary,
     EventDeliveryError,
@@ -38,9 +46,17 @@ from samsarix_orchestration import (
 
 __all__ = [
     "MAX_CHECKPOINT_BYTES",
+    "MAX_APPROVAL_PROMPT_CHARACTERS",
+    "MAX_APPROVAL_ACTOR_CHARACTERS",
+    "MAX_APPROVAL_REASON_CHARACTERS",
     "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
     "ActionContext",
+    "ApprovalDecision",
+    "ApprovalDecisionKind",
+    "ApprovalPolicy",
+    "ApprovalRecord",
+    "ApprovalStatus",
     "CheckpointStore",
     "CheckpointSummary",
     "EventDeliveryError",

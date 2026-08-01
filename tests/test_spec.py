@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from samsarix_orchestration import (
+    ApprovalPolicy,
     WorkflowDefinition,
     WorkflowSpecError,
     WorkflowStep,
@@ -74,7 +75,7 @@ def test_workflow_round_trip() -> None:
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     [
-        (lambda data: data.update(version=2), "version"),
+        (lambda data: data.update(version=3), "version"),
         (lambda data: data.update(name=""), "name"),
         (lambda data: data.update(description="x" * 2_001), "description"),
         (lambda data: data.update(max_concurrency=0), "max_concurrency"),
@@ -163,3 +164,61 @@ def test_load_valid_workflow(tmp_path: Path) -> None:
     source = tmp_path / "workflow.json"
     source.write_text(json.dumps(valid_data()), encoding="utf-8")
     assert load_workflow(source).name == "test-workflow"
+
+
+def test_version_two_approval_round_trip_is_strict() -> None:
+    data = valid_data()
+    data["version"] = 2
+    steps = data["steps"]
+    assert isinstance(steps, list)
+    steps[1]["approval"] = {"prompt": "Publish this validated result?"}
+
+    workflow = WorkflowDefinition.from_dict(data)
+
+    assert workflow.version == 2
+    assert workflow.steps[1].approval == ApprovalPolicy(prompt="Publish this validated result?")
+    assert workflow.to_dict()["steps"][1]["approval"] == {
+        "prompt": "Publish this validated result?"
+    }
+
+
+@pytest.mark.parametrize(
+    ("version", "approval", "expected_code"),
+    [
+        (1, {"prompt": "Approve?"}, "approval_version"),
+        (2, "Approve?", "approval_type"),
+        (2, {}, "approval_prompt"),
+        (2, {"prompt": " "}, "approval_prompt"),
+        (2, {"prompt": "x" * 501}, "approval_prompt"),
+        (2, {"prompt": "Approve?", "future": True}, "unknown_field"),
+    ],
+)
+def test_approval_validation_fails_closed(
+    version: int,
+    approval: object,
+    expected_code: str,
+) -> None:
+    data = valid_data()
+    data["version"] = version
+    steps = data["steps"]
+    assert isinstance(steps, list)
+    steps[0]["approval"] = approval
+    assert expected_code in {issue.code for issue in validate_workflow_data(data)}
+
+
+def test_version_two_rejects_unknown_fields_while_version_one_preserves_annotations() -> None:
+    legacy = valid_data()
+    legacy["annotation"] = "allowed"
+    steps = legacy["steps"]
+    assert isinstance(steps, list)
+    steps[0]["annotation"] = "allowed"
+    assert not validate_workflow_data(legacy)
+
+    strict = valid_data()
+    strict["version"] = 2
+    strict["annotation"] = "rejected"
+    strict_steps = strict["steps"]
+    assert isinstance(strict_steps, list)
+    strict_steps[0]["annotation"] = "rejected"
+    issues = validate_workflow_data(strict)
+    assert [issue.code for issue in issues].count("unknown_field") == 2

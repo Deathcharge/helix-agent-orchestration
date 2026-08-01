@@ -24,6 +24,8 @@ increments behind focused, green pull requests; publication remains a separate o
   idempotent publishing, payload privacy, and measurable avoided redaction work.
 - Completed: transactional same-host SQLite checkpoints add concurrent multi-run storage,
   fail-closed monotonic updates, privacy-safe inspection, and explicit retention deletion.
+- Completed: strict schema-v2 pre-action approval gates persist state-bound decisions,
+  pause all ready work, and reject without invoking the gated handler.
 
 ## Release candidate
 
@@ -34,9 +36,9 @@ increments behind focused, green pull requests; publication remains a separate o
 
 Current hardening backlog:
 
-- Local JSON and same-host SQLite checkpointing plus idempotency keys are implemented;
-  process isolation, compensation, human pauses, distributed workers, and cross-host
-  coordination remain.
+- Local JSON and same-host SQLite checkpointing, idempotency keys, and static pre-action
+  approvals are implemented; process isolation, compensation, dynamic mid-action pauses,
+  distributed workers, and cross-host coordination remain.
 - No release/tag/package-index verification or third-party user evidence.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
   a separate installed consumer now validates that wedge across a package boundary.

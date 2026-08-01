@@ -36,6 +36,18 @@ The runnable [order pipeline](../examples/resumable_order_pipeline.py) demonstra
 write that succeeds before its response is lost. Resume uses the same idempotency key,
 does not repeat completed pricing, and does not create a second receipt.
 
+### Release, publishing, and irreversible-action review
+
+A version-2 workflow can prepare a release plan, migration statement, outbound message,
+or destructive-operation manifest as an ordinary successful step, then pause before the
+effectful action. The paused report gives the reviewing application the prepared output
+and a request bound to the exact run state. Approval persists before the effect handler
+starts; rejection invokes no gated handler.
+
+This is strongest when the reviewer can inspect a deterministic proposal and the effect
+destination honors `ActionContext.idempotency_key`. It is not suitable for approving an
+unknown mutation assembled only after the gated handler has already started.
+
 ## Validated external consumer
 
 [Samsarix Integration Examples](https://github.com/Deathcharge/samsarix-integration-examples)
@@ -58,6 +70,8 @@ claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
 - Checkpoints contain plaintext inputs only as a digest, but successful outputs are stored
   in plaintext. Applications own encryption, access control, retention, and deletion.
 - Registered actions are trusted code; checkpointing does not create a sandbox.
+- Approval request IDs do not authenticate reviewers. The embedding application owns
+  identity, authorization, presentation, and decision provenance.
 
 ## When to choose something else
 
@@ -82,7 +96,8 @@ provider, database server, account, or third-party runtime dependency.
 ## Next evidence-driven milestones
 
 1. Validate lifecycle events in a desktop progress view.
-2. A versioned approval/interrupt primitive built on the checkpoint contract.
+2. Completed: a strict versioned pre-action approval primitive built on the checkpoint
+   contract.
 3. Completed: a SQLite store with transactional single-host concurrency and safe run
    inspection.
 4. A published package with signed provenance and a third-party adoption signal.
