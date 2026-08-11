@@ -54,6 +54,19 @@ from .sqlite_store import (
     SqliteCheckpointStore,
 )
 
+# Bandit B404 matches this internal module name; it is not a stdlib subprocess import.
+from .subprocess_actions import (  # nosec B404
+    DEFAULT_MAX_SUBPROCESS_INPUT_BYTES,
+    DEFAULT_MAX_SUBPROCESS_STDERR_BYTES,
+    DEFAULT_MAX_SUBPROCESS_STDOUT_BYTES,
+    MAX_SUBPROCESS_STREAM_BYTES,
+    SUBPROCESS_PROTOCOL_VERSION,
+    SubprocessActionError,
+    SubprocessActionHandler,
+    subprocess_action,
+    subprocess_envelope,
+)
+
 __all__ = [
     "MAX_CHECKPOINT_BYTES",
     "MAX_APPROVAL_PROMPT_CHARACTERS",
@@ -61,6 +74,10 @@ __all__ = [
     "MAX_APPROVAL_REASON_CHARACTERS",
     "MAX_LIST_LIMIT",
     "MAX_WORKFLOW_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_INPUT_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_STDERR_BYTES",
+    "DEFAULT_MAX_SUBPROCESS_STDOUT_BYTES",
+    "MAX_SUBPROCESS_STREAM_BYTES",
     "PLAN_SCHEMA_VERSION",
     "ActionContext",
     "ApprovalDecision",
@@ -83,6 +100,9 @@ __all__ = [
     "SQLITE_APPLICATION_ID",
     "SQLITE_SCHEMA_VERSION",
     "SqliteCheckpointStore",
+    "SUBPROCESS_PROTOCOL_VERSION",
+    "SubprocessActionError",
+    "SubprocessActionHandler",
     "StepResult",
     "StepState",
     "ValidationIssue",
@@ -98,6 +118,8 @@ __all__ = [
     "WorkflowStep",
     "build_workflow_plan",
     "load_workflow",
+    "subprocess_action",
+    "subprocess_envelope",
 ]
 
 __version__ = "0.1.0"

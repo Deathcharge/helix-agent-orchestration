@@ -115,6 +115,47 @@ steps become `blocked`. A synchronous-handler timeout ends the step immediately 
 using configured retries because Python cannot stop the worker thread and a retry could
 overlap the same external side effect.
 
+### Subprocess action protocol
+
+Host code may wrap a fixed trusted command with `subprocess_action`. This does not add a
+workflow field: JSON still selects only the registered action name. The executable path is
+absolute, arguments are not interpolated, and no shell is involved. Each attempt writes one
+newline-terminated envelope to stdin:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "action",
+  "workflow": "document-pipeline",
+  "run_id": "import-42",
+  "idempotency_key": "import-42:extract",
+  "attempt": 1,
+  "step": {
+    "id": "extract",
+    "agent": "local",
+    "action": "external-tool",
+    "parameters": {"mode": "strict"},
+    "compensation_action": null
+  },
+  "workflow_input": {"document": "example"},
+  "dependencies": {},
+  "output": null
+}
+```
+
+`kind` is `compensation` for a separately registered compensator; then `output` is the
+original successful forward output and `step.compensation_action` names the configured
+reverse action. Approval prompts and decision provenance are omitted. The child must emit
+exactly one finite UTF-8 JSON value on stdout and exit zero. A nonzero exit, empty/invalid
+output, stream-limit violation, or spawn error fails the attempt under the step's normal
+retry policy.
+
+By default the child receives no general parent environment. The Windows implementation
+retains a bounded platform startup allowlist; caller-specified variables are added. Full
+inheritance, stderr disclosure, working directory, stream ceilings, and terminate grace are
+explicit Python API choices. Cancellation terminates, then kills if needed, the direct child.
+This protocol provides interruptible trusted-process execution, not an untrusted-code sandbox.
+
 The CLI exposes provider-free `collect`, `echo`, `fail`, `uppercase`, and `word_count`
 forward actions plus the `compensate` handler used by `init --saga`. Applications register
 real handlers through `WorkflowRunner`; workflow files cannot import them.

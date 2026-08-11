@@ -22,5 +22,6 @@ def test_public_api_has_release_version() -> None:
     assert helix_orchestration.CompensationContext is samsarix_orchestration.CompensationContext
     assert helix_orchestration.CheckpointPhase is samsarix_orchestration.CheckpointPhase
     assert helix_orchestration.WorkflowPlan is samsarix_orchestration.WorkflowPlan
+    assert helix_orchestration.subprocess_action is samsarix_orchestration.subprocess_action
     assert helix_orchestration.build_workflow_plan is samsarix_orchestration.build_workflow_plan
     assert build_legacy_parser().prog == "helix-orchestration"

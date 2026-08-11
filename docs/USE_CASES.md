@@ -51,6 +51,21 @@ The runnable [order pipeline](../examples/resumable_order_pipeline.py) demonstra
 write that succeeds before its response is lost. Resume uses the same idempotency key,
 does not repeat completed pricing, and does not create a second receipt.
 
+### Blocking command-line and legacy-tool pipelines
+
+Build, media, document, scientific, and migration applications often already depend on a
+trusted executable whose blocking calls cannot cooperate with Python task cancellation.
+`subprocess_action` gives that tool a small versioned JSON stdin/stdout contract, independent
+stream limits, a scrubbed-by-default environment, and direct-child termination on timeout.
+It fits local applications that want auditable dependency/retry/checkpoint behavior without
+embedding tool-specific Python adapters or operating a worker service.
+
+The application fixes the absolute executable and arguments when it registers the action;
+workflow data supplies only the normal JSON context. The runnable
+[subprocess pipeline](../examples/subprocess_pipeline.py) uses one file as both orchestrator
+and isolated worker. This is not appropriate for hostile executables, detached process trees,
+or jobs that need cluster placement and remote worker replacement.
+
 ### Release, publishing, and irreversible-action review
 
 A version-2 workflow can prepare a release plan, migration statement, outbound message,
@@ -103,7 +118,8 @@ claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
 
 Choose a durable execution platform when work must survive worker replacement across a
 cluster, wait for months, coordinate distributed deployments, or provide a hosted control
-plane. Current products make those trade-offs explicit:
+plane. Choose a real sandbox/container or restricted OS identity when code itself is
+untrusted. Current products make those trade-offs explicit:
 
 - [Temporal](https://docs.temporal.io/) targets durable distributed application execution.
 - [Inngest durable workflows](https://www.inngest.com/docs/patterns/durable) persist and
@@ -127,7 +143,8 @@ provider, database server, account, or third-party runtime dependency.
 3. Completed: a SQLite store with transactional single-host concurrency and safe run
    inspection.
 4. Completed: schema-v3 durable orchestrated Saga compensation and local CLI evidence.
-5. A published package with signed provenance and a third-party adoption signal.
+5. Completed: bounded direct subprocess actions for interruptible trusted local tools.
+6. A published package with signed provenance and a third-party adoption signal.
 
 Research reviewed 2026-08-01. Product claims in the README remain limited to behavior
 verified in this repository.
