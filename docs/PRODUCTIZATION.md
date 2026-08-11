@@ -1,6 +1,6 @@
 # Productization record
 
-Last updated: 2026-08-01
+Last updated: 2026-08-10
 
 ## Repository assessment
 
@@ -112,6 +112,9 @@ distributed durable execution or continuation from inside a running handler.
 11. Offer process execution only as an application-registered direct-executable adapter.
     Use a bounded versioned JSON protocol, no shell, explicit environment policy, and
     terminate-then-kill cancellation; do not label trusted-process isolation a sandbox.
+12. Publish only from an immutable version-matched GitHub release through a protected
+    environment and PyPI Trusted Publishing. Attest the built distributions, attach their
+    checksums, and never store a long-lived package-index token.
 
 Current ecosystem evidence informed the limits rather than expanding scope:
 
@@ -145,6 +148,11 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - The Python Packaging User Guide recommends `pyproject.toml`, `[project.scripts]`,
   and a `src` layout that tests the installed package boundary:
   https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+- PyPA recommends GitHub OIDC Trusted Publishing instead of long-lived PyPI tokens, and
+  GitHub artifact attestations bind release files to their source workflow and commit. The
+  release path implements both controls behind a protected environment:
+  https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
+  and https://docs.github.com/en/actions/concepts/security/artifact-attestations
 
 ## Prioritized findings
 
@@ -176,7 +184,10 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add offline dependency plans and Mermaid source for review and downstream UIs.
 - [x] Add durable schema-v3 compensating actions with reverse dependency execution.
 - [x] Add bounded direct subprocess actions with reliable timeout termination.
-- Decide whether the package name is available and intended for PyPI.
+- [x] Add a protected, version-gated release workflow with provenance attestations and
+  secretless PyPI publishing.
+- [x] Select PyPI and verify that the public normalized-name endpoint returned `404` on
+  2026-08-10; the first trusted upload remains the authoritative name claim.
 - Add performance targets only after real usage workloads exist.
 
 ## Implementation checklist
@@ -200,6 +211,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
   cancellation events, privacy-safe inspection, and installed CLI Saga journey.
 - [x] Shell-free absolute-command subprocess adapter with JSON protocol, stream and
   environment bounds, cancellation cleanup, forward/compensation support, and example.
+- [x] Release automation with immutable action pins, exact version-tag validation,
+  distribution checksums, Sigstore/GitHub provenance, and PyPI OIDC.
 - [x] Standard security scan and adversarial final review.
 
 ## Release acceptance criteria
@@ -277,8 +290,10 @@ release provenance, or third-party adoption gates.
 
 ## External and owner-controlled blockers
 
-- Publication: choose and authorize a package registry and confirm name ownership.
-- Release: create an owner-approved version/tag and publish artifacts after CI passes.
+- Publication: register the documented pending PyPI Trusted Publisher; the public project
+  endpoint returned `404` on 2026-08-10 but only the first upload reserves the name.
+- Release: create and publish the first immutable version tag after the publisher identity
+  and protected `pypi` environment are confirmed.
 
 ## Known risks
 
@@ -306,7 +321,7 @@ authoritative for Python 3.11 through 3.13:
 
 - `python -m ruff check .`: pass;
 - `python -m mypy`: pass, 22 source files across the primary and compatibility packages;
-- `python -m pytest`: 175 passed, 88.96% branch-aware coverage;
+- `python -m pytest`: 179 passed, 88.99% branch-aware coverage;
 - `python -m bandit -q -r src`: pass, no findings;
 - `python -m build` and `python -m twine check dist/*`: pass for sdist and wheel;
 - a second empty environment installed the wheel with `--no-deps`; both command names,
@@ -338,5 +353,6 @@ the artifact is rebuilt, and the document itself is included in the source archi
 **Branded local release candidate with named owner gates.** The core product journey,
 offline preflight planning, durable pre-action review gate, MPL-2.0 licensing, Samsarix
 ownership, compatibility boundary, and local engineering gates are implemented. Registry
-publication remains gated by package-name confirmation, release provenance, and an
-explicit owner publication decision.
+publication remains gated by the one-time PyPI publisher registration and first immutable
+release. The repository-side provenance, approval, checksum, and secretless upload path is
+implemented in `.github/workflows/release.yml`.

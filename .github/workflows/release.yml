@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and attest distributions
+    if: github.event.release.target_commitish == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # Exchange the job identity for a provenance signing certificate.
+      attestations: write # Store the signed provenance statement with the repository.
+
+    steps:
+      - name: Check out released source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Require a main-line exact version tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "release tag must identify a commit contained in main" >&2
+            exit 1
+          }
+          python - <<'PY'
+          import os
+          import tomllib
+
+          with open("pyproject.toml", "rb") as stream:
+              version = tomllib.load(stream)["project"]["version"]
+          expected = f"v{version}"
+          actual = os.environ["RELEASE_TAG"]
+          if actual != expected:
+              raise SystemExit(f"release tag {actual!r} must equal package tag {expected!r}")
+          PY
+
+      - name: Use the release commit timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install pinned release tools
+        run: >-
+          python -m pip install --disable-pip-version-check
+          build==1.5.0 setuptools==83.0.0 twine==6.2.0 wheel==0.47.0
+
+      - name: Build and validate distributions
+        run: |
+          python -m build --no-isolation
+          python -m twine check dist/*
+
+      - name: Verify wheel contents
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("dist").glob("*.whl"))
+          names = ZipFile(wheel).namelist()
+          required = {
+              "samsarix_orchestration/subprocess_actions.py",
+              "samsarix_orchestration/sqlite_store.py",
+              "helix_orchestration/subprocess_actions.py",
+              "helix_orchestration/sqlite_store.py",
+          }
+          missing = sorted(required.difference(names))
+          if missing:
+              raise SystemExit(f"wheel is missing supported modules: {missing}")
+          excluded = ("/agents/", "/coordination/", "/plugins/")
+          unexpected = sorted(name for name in names if any(part in name for part in excluded))
+          if unexpected:
+              raise SystemExit(f"wheel contains excluded historical modules: {unexpected}")
+          PY
+
+      - name: Create release checksums
+        run: |
+          mkdir release-assets
+          cd dist
+          sha256sum * > ../release-assets/SHA256SUMS
+
+      - name: Attest package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Preserve release payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-distributions
+          path: |
+            dist/*
+            release-assets/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release-assets:
+    name: Attach release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # Attach the distributions and checksums to the GitHub release.
+
+    steps:
+      - name: Download attested release payload
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-distributions
+
+      - name: Attach distributions and checksums to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* release-assets/SHA256SUMS
+
+  publish:
+    name: Publish approved release
+    needs: [build, release-assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/samsarix-orchestration
+    permissions:
+      id-token: write # Exchange the protected environment identity for a PyPI token.
+
+    steps:
+      - name: Download attested release payload
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-distributions
+
+      - name: Publish with PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist
+          attestations: true
+          print-hash: true
+          skip-existing: false

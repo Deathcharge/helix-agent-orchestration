@@ -15,7 +15,8 @@ infrastructure.
 
 Status: **0.1 alpha / local release candidate.** The implemented CLI and Python journey
 are tested, including from an exact-pin external package consumer. The distribution has
-not yet been published to a package index.
+not yet been published to a package index. The protected, provenance-attested publication
+process is documented in [release operations](docs/RELEASING.md).
 
 ## What works
 
