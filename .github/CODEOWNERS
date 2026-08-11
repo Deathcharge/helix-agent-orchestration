@@ -1,0 +1,7 @@
+# Repository ownership and release-sensitive paths
+* @Deathcharge
+
+.github/workflows/ @Deathcharge
+SECURITY.md @Deathcharge
+docs/RELEASING.md @Deathcharge
+pyproject.toml @Deathcharge

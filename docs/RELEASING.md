@@ -21,10 +21,12 @@ The public PyPI JSON endpoint returned `404` for this normalized project name on
 2026-08-10. That is availability evidence, not a reservation; only a successful first
 Trusted Publishing upload creates and claims the project.
 
-The GitHub `pypi` environment must require a reviewer and allow only version tags matching
-`v*`. Keep self-review disabled when a second authorized maintainer is available. Protect
-changes to `.github/workflows/release.yml` like publishing credentials because PyPI trusts
-the repository, workflow filename, and environment identity together.
+As of 2026-08-11, the GitHub `pypi` environment requires a reviewer and allows only version
+tags matching `v*`. The repository's active `Protect main` ruleset also requires pull
+requests, resolved review threads, and the Python 3.11-3.13 CI matrix. Keep self-review
+disabled when a second authorized maintainer is available. Protect changes to
+`.github/workflows/release.yml` like publishing credentials because PyPI trusts the
+repository, workflow filename, and environment identity together.
 
 ## Prepare a release
 

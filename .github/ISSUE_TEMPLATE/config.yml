@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/Deathcharge/samsarix-agent-orchestration/security/policy
+    about: Follow the private reporting instructions instead of opening a public issue.
+  - name: Usage and product support
+    url: https://github.com/Deathcharge/samsarix-agent-orchestration/blob/main/SUPPORT.md
+    about: Review support scope, diagnostic details, and contact routes.

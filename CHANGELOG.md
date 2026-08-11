@@ -2,9 +2,10 @@
 
 All notable changes to the supported Samsarix Orchestration package are recorded here.
 
-## 0.1.0 - 2026-07-28
+## 0.1.0 - Unreleased
 
-Initial honest standalone release candidate.
+Initial alpha release candidate. Replace `Unreleased` with the publication date in the
+versioned release pull request.
 
 ### Added
 

@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a bounded use case or improvement for the supported product.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe the real workflow and why existing behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and success criteria, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include application-level workarounds or existing tools you evaluated.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Security and operational boundaries
+      description: Note external effects, secrets, network access, persistence, scale, and failure recovery.
+    validations:
+      required: true
+  - type: checkboxes
+    id: fit
+    attributes:
+      label: Product fit
+      options:
+        - label: This request is for the supported local orchestration package or CLI.
+          required: true
+        - label: I searched existing issues and the roadmap.
+          required: true
