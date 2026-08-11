@@ -50,6 +50,9 @@ Homepage = "https://github.com/Deathcharge/samsarix-agent-orchestration"
 Repository = "https://github.com/Deathcharge/samsarix-agent-orchestration.git"
 Issues = "https://github.com/Deathcharge/samsarix-agent-orchestration/issues"
 Changelog = "https://github.com/Deathcharge/samsarix-agent-orchestration/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Deathcharge/samsarix-agent-orchestration#readme"
+Security = "https://github.com/Deathcharge/samsarix-agent-orchestration/security/policy"
+Support = "https://github.com/Deathcharge/samsarix-agent-orchestration/blob/main/SUPPORT.md"
 
 [tool.setuptools]
 packages = ["samsarix_orchestration", "helix_orchestration"]

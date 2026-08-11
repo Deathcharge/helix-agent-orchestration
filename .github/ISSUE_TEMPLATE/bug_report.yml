@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible defect in the supported package, CLI, or documentation.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not include credentials, private workflow inputs, or security vulnerabilities.
+        Use the private process in SECURITY.md for suspected vulnerabilities.
+  - type: input
+    id: version
+    attributes:
+      label: Samsarix Orchestration version
+      placeholder: 0.1.0 or an exact commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Python version, operating system, and installation method.
+      placeholder: Python 3.12.4, Windows 11, wheel installed in a clean venv
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest safe workflow, command, and inputs that reproduce the issue.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized output, exception text, and exit code where relevant.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I searched existing issues for this behavior.
+          required: true
+        - label: I removed credentials, private data, and proprietary workflow inputs.
+          required: true
+        - label: This is not a vulnerability report.
+          required: true
