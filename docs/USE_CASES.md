@@ -144,7 +144,8 @@ provider, database server, account, or third-party runtime dependency.
    inspection.
 4. Completed: schema-v3 durable orchestrated Saga compensation and local CLI evidence.
 5. Completed: bounded direct subprocess actions for interruptible trusted local tools.
-6. A published package with signed provenance and a third-party adoption signal.
+6. In progress: the secretless, provenance-attested publication path is implemented; the
+   first package-index release and a third-party adoption signal remain.
 
-Research reviewed 2026-08-01. Product claims in the README remain limited to behavior
+Research reviewed 2026-08-10. Product claims in the README remain limited to behavior
 verified in this repository.

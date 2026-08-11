@@ -48,7 +48,8 @@ Current hardening backlog:
   approvals, orchestrated Saga compensation, and trusted subprocess isolation are
   implemented; sandboxing, dynamic mid-action pauses, distributed workers, and cross-host
   coordination remain.
-- No release/tag/package-index verification or third-party user evidence.
+- A secretless, provenance-attested release workflow and operator runbook are implemented;
+  the first immutable tag, package-index upload, and third-party user evidence remain.
 - The current differentiation is bounded, auditable, zero-dependency embedded recovery;
   a separate installed consumer now validates that wedge across a package boundary.
 

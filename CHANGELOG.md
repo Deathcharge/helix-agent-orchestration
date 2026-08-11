@@ -25,6 +25,9 @@ Initial honest standalone release candidate.
 - Bounded subprocess actions with an absolute direct-exec command contract, versioned JSON
   protocol, explicit environment inheritance, stream ceilings, cancellation termination,
   Saga compatibility, and a runnable isolated-worker example.
+- A protected GitHub release workflow with exact version-tag validation, immutable action
+  pins, wheel-boundary checks, SHA-256 release assets, provenance attestations, and secretless
+  PyPI Trusted Publishing.
 - Exact-pin external consumer evidence for resumable, idempotent redaction and publishing.
 - Samsarix distribution, import namespace, CLI, company contacts, and `0.1.x`
   compatibility aliases for the historical Helix names.

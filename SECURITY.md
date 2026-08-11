@@ -117,3 +117,17 @@ smallest reproduction, impact, and any relevant deployment assumptions. Do not i
 real credentials, personal data, or third-party private content.
 
 No response-time or bounty commitment is implied.
+
+## Release integrity
+
+The release workflow runs only when a GitHub release is published, checks out that immutable
+tag, and requires it to equal `v<project.version>`. Its third-party actions are pinned to full
+commit hashes. Build provenance uses GitHub/Sigstore artifact attestations, and PyPI upload
+uses a short-lived OIDC credential scoped to the protected `pypi` environment; no persistent
+package-index token is required.
+
+Treat changes to `.github/workflows/release.yml`, the GitHub environment policy, and the PyPI
+Trusted Publisher identity as release-credential changes. Require deliberate review and keep
+the environment limited to version tags. Provenance proves the build origin and instructions,
+not that the released code is vulnerability-free. See [release operations](docs/RELEASING.md)
+for publication, verification, failure, and yank procedures.
