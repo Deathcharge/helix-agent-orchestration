@@ -37,9 +37,11 @@ adapter but cannot prevent a malicious child from consuming CPU, memory, disk, o
 On cancellation or runner timeout, the adapter terminates the direct child, waits for a
 bounded grace period, then kills and reaps it. Operating-system process creation can itself
 be temporarily uninterruptible, and descendants that detach or outlive their parent are not
-covered. External effects remain at least once: termination can happen after the child makes
-an effect but before it emits or checkpoints success, so workers must apply the supplied
-idempotency key at the destination.
+covered. Workers must not leave descendants holding the protocol streams after the direct
+child exits because those inherited handles can prevent protocol completion. The adapter
+provides neither an effect-delivery guarantee nor exactly-once execution. Termination can
+happen before the child makes an effect, or after it makes an effect but before it emits or
+checkpoints success. Workers must apply the supplied idempotency key at the destination.
 
 Checkpointing is opt-in and persists successful step outputs as plaintext JSON. The
 bundled directory store hashes run identifiers for filenames, bounds reads and writes,

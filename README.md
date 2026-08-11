@@ -407,10 +407,11 @@ removed from the active tree and remain recoverable from Git revision `6e10c5b`.
 
 ## Security, privacy, and cost
 
-The supported runtime performs no network requests, loads no dynamic modules from workflow
-data, and executes no workflow strings as code. Subprocess environment access follows the
-host application's explicit `subprocess_action` policy; the built-in CLI path does not use
-that adapter.
+The core Python runtime performs no network requests, loads no dynamic modules from workflow
+data, and executes no workflow strings as code. Registered subprocess handlers can access the
+network with the invoking user's privileges. Subprocess environment access follows the host
+application's explicit `subprocess_action` policy; the built-in CLI path does not use that
+adapter.
 Workflow JSON selects only action names that the host application explicitly registered.
 Concurrency, step count, timeouts, retries, input size, and output size are bounded.
 Cancellation propagates to running async actions.

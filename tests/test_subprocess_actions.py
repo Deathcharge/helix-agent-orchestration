@@ -217,6 +217,44 @@ async def test_workflow_timeout_terminates_child_before_it_can_continue(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_external_cancellation_terminates_child_before_propagating(
+    tmp_path: Path,
+) -> None:
+    started = tmp_path / "started.txt"
+    marker = tmp_path / "escaped.txt"
+    handler = python_action(
+        "import json,pathlib,signal,sys,time; json.load(sys.stdin); "
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text('started'); time.sleep(0.8); "
+        "pathlib.Path(sys.argv[2]).write_text('escaped'); json.dump('late',sys.stdout)",
+        str(started),
+        str(marker),
+        terminate_grace_seconds=0.05,
+    )
+    workflow = WorkflowDefinition(
+        name="cancel-subprocess",
+        steps=(WorkflowStep(id="work", action="external"),),
+    )
+    run_task = asyncio.create_task(WorkflowRunner({"external": handler}).run(workflow))
+
+    for _ in range(500):
+        if started.exists():
+            break
+        await asyncio.sleep(0.01)
+    if not started.exists():
+        run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+    assert started.exists()
+    run_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+    await asyncio.sleep(0.9)
+
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
 async def test_timeout_retry_starts_only_after_previous_child_is_dead(tmp_path: Path) -> None:
     marker = tmp_path / "overlap.txt"
     handler = python_action(
