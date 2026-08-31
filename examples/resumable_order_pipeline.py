@@ -18,6 +18,9 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
+import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +30,61 @@ from samsarix_orchestration import (
     WorkflowDefinition,
     WorkflowRunner,
 )
+
+MAX_RECEIPT_BYTES = 4_096
+
+
+def _publish_receipt(path: Path, receipt: dict[str, Any]) -> bool:
+    """Publish complete content without replacement; return whether it was newly created.
+
+    Requires an application-owned directory and a local filesystem supporting hard links.
+    This is an idempotent destination example, not a lock for concurrent checkpoint writers
+    or a guarantee of persistence after power loss. An abrupt process exit may leave a
+    hidden staging file, but never exposes that partially written file as the receipt.
+    """
+    expected = (json.dumps(receipt, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
+    if len(expected) > MAX_RECEIPT_BYTES:
+        raise ValueError("receipt exceeds the example's size limit")
+
+    def matches_existing() -> bool:
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            return False
+        if not stat.S_ISREG(mode):
+            raise ValueError("existing receipt must be a regular file, not a symbolic link")
+        with path.open("rb") as stream:
+            existing = stream.read(MAX_RECEIPT_BYTES + 1)
+        # The earlier example used write_text, which emitted CRLF on Windows.
+        if existing not in (expected, expected[:-1] + b"\r\n"):
+            raise ValueError("existing receipt conflicts with the expected order")
+        return True
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if matches_existing():
+        return False
+    staged: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", prefix=".receipt-", suffix=".tmp", dir=path.parent, delete=False
+        ) as stream:
+            staged = Path(stream.name)
+            stream.write(expected)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            # Unlike replace/rename, a hard link must not replace a race winner.
+            os.link(staged, path)
+        except FileExistsError:
+            if not matches_existing():
+                raise ValueError(
+                    "receipt changed during publication; retry after reconciliation"
+                ) from None
+            return False
+        return True
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
 
 
 def build_workflow() -> WorkflowDefinition:
@@ -61,13 +119,10 @@ async def execute(args: argparse.Namespace) -> int:
 
     def publish(context: ActionContext) -> dict[str, Any]:
         receipt = dict(context.dependencies["price"])
-        receipt_dir.mkdir(parents=True, exist_ok=True)
         key = hashlib.sha256(context.idempotency_key.encode("utf-8")).hexdigest()
         path = receipt_dir / f"{key}.json"
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
-        if args.fail_after_publish:
+        created = _publish_receipt(path, receipt)
+        if created and args.fail_after_publish:
             raise RuntimeError("simulated lost response after the receipt was written")
         return receipt
 

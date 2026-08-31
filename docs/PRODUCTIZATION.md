@@ -172,7 +172,10 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Add CI across supported Python versions with an installed-wheel smoke test.
 - [x] Rewrite user, architecture, format, security, and contribution documentation.
 - [x] Adopt MPL-2.0 and reconcile `LICENSE`, package metadata, and legal notices.
-- [ ] Validate Python 3.12 and 3.13 in CI; only 3.11 is available locally.
+- [x] Validate Python 3.12 and 3.13 in CI; the post-merge matrix at `93295ff` passed,
+  including the installed-wheel/source-archive test gate.
+- [x] Make the public recovery example reject conflicting receipts and publish complete
+  content without overwriting an existing destination; add failure/race/CLI regressions.
 
 ### P2
 
@@ -277,7 +280,8 @@ decision.
 
 ## External package consumer
 
-The separately installable `samsarix-integration-examples` distribution pins this package
+The separately installable, owner-controlled private `samsarix-integration-examples`
+distribution pins this package
 at merged commit `0dfc050cf9a4582c9fa8d34d74b1ca97d43c9005`. Consumer merge
 `41ea9221f88c66d469c022075c9c9c49400a7961` proves a bounded redaction/publish workflow,
 one restored step, one redaction call across failure and resume, byte-identical idempotent
@@ -285,8 +289,14 @@ publishing, payload-free lifecycle events, and source-identity rejection. Its Py
 3.11–3.13 CI and clean-wheel installation are recorded in
 [the consumer evidence](CONSUMER_EVIDENCE.md).
 
-This closes the internal cross-package compatibility gate. It does not close publication,
-release provenance, or third-party adoption gates.
+The current consumer `0.2.12` additionally passed 38 tests against an installed candidate
+wheel built from Orchestration `93295ff` on Windows Python 3.11. Its older declared pin was
+deliberately overridden for this compatibility check, not upgraded. Private source/CI
+links are not a public reproducibility path; the standalone order example requires no
+sibling package or credentials.
+
+This supplies internal cross-package compatibility evidence. It does not close publication,
+release provenance, consumer adoption of the candidate, or third-party adoption gates.
 
 ## External and owner-controlled blockers
 
@@ -312,6 +322,36 @@ release provenance, or third-party adoption gates.
   compatibility window and should be removed only in a versioned breaking release.
 
 ## Final verification
+
+### Public recovery example and current consumer (2026-08-31)
+
+A regression against `93295ff` reproduced a real example defect: after a lost publish
+response, replacing its receipt with different valid JSON made resume report success
+with the wrong order. The example also wrote directly to the final path, exposing partial
+content if interrupted. The destination now stages and flushes bounded content, publishes
+with a no-replacement hard link, and accepts existing content only when it matches the
+expected receipt (including the historical CRLF newline). There is no overwrite fallback.
+
+Twelve targeted tests pass for complete recovery, conflict refusal, staging cleanup on
+flush/link failure, competing publishers, historical receipts, bounded and nonregular
+destinations, and actual CLI failure/resume commands. Strict MyPy and Ruff pass for the
+changed example. Python's documented [hard-link](https://docs.python.org/3/library/os.html#os.link)
+and [flush/fsync](https://docs.python.org/3/library/os.html#os.fsync) contracts inform the
+implementation. Filesystem support, trusted-directory ownership, JSON-store single-writer
+requirements, power-loss limits, and possible interrupted staging-file cleanup are explicit
+in the use-case guide. The runtime API and dependency boundary are unchanged.
+
+The complete local suite passed 204 tests with 88.99% branch-aware runtime coverage on
+Python 3.11.9. Ruff, strict MyPy for shipped modules and the changed example, and Bandit
+for both shipped modules and the example passed. Formatting checks passed for both new
+or modified Python files.
+The rebuilt sdist/wheel passed Twine and the distribution round-trip: all 204 shipped
+tests passed outside the checkout against the installed wheel with 88.90% coverage, and
+both namespace CLI version commands passed.
+
+The separate installed-wheel consumer check passed 38 tests with 91.03% coverage; exact
+versions, substituted-pin scope, and private-access limits are in
+[the consumer evidence](CONSUMER_EVIDENCE.md).
 
 ### Distribution-path audit (2026-08-31)
 

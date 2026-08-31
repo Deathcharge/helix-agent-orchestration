@@ -49,7 +49,29 @@ CI job, or trusted worker process.
 
 The runnable [order pipeline](../examples/resumable_order_pipeline.py) demonstrates a
 write that succeeds before its response is lost. Resume uses the same idempotency key,
-does not repeat completed pricing, and does not create a second receipt.
+does not repeat completed pricing, and does not create a second receipt. From a checkout
+or unpacked source distribution, after installing this package into your active Python
+environment, choose an unused state directory and run:
+
+```bash
+python examples/resumable_order_pipeline.py --state-dir .samsarix-order-demo --fail-after-publish
+python examples/resumable_order_pipeline.py --state-dir .samsarix-order-demo --resume
+```
+
+The first command intentionally exits `1` with status `failed` after publishing the
+receipt. The second exits `0` with status `succeeded`, `restored_steps: 2`, and a receipt
+total of `2999` cents. Receipt bytes remain unchanged. Conflicting or incomplete existing
+receipts fail without replacement; reconcile them before resuming. Historical receipts
+with a Windows CRLF newline are accepted without rewriting them.
+
+The destination uses a flushed staging file and a no-replacement hard link. Use an
+application-owned directory on a local filesystem supporting hard links (for example,
+NTFS or ext4); an unsupported filesystem produces a failed step, not a non-atomic fallback.
+The example retains plaintext fictional order data and requires a single active writer
+per JSON checkpoint run. Atomic receipt creation does not provide checkpoint locking,
+protection from another process mutating the directory, or power-loss durability. A
+process killed before cleanup may leave a hidden `.receipt-*.tmp` staging file; inspect
+it only after stopping the run, and never treat it as the published receipt.
 
 ### Blocking command-line and legacy-tool pipelines
 
@@ -86,16 +108,20 @@ executing application handlers. Teams can compare this bounded plan in review or
 their own policy around newly introduced actions and missing gates. Mermaid source offers
 the same graph for design documents without requiring a renderer in the package or CI.
 
-## Validated external consumer
+## Validated internal cross-package consumer
 
 [Samsarix Integration Examples](https://github.com/Deathcharge/samsarix-integration-examples)
-installs exact merged Orchestration and Integration Guard distributions. Its redaction
+is an owner-controlled private repository; its links require access. It installs exact
+merged Orchestration and Integration Guard distributions. Its redaction
 pipeline deliberately loses the publish response, then resumes with one restored step,
 one total redaction call, unchanged output bytes, and `deduplicated: true`. Seeded raw
 values are asserted absent from checkpoints, lifecycle events, reports, and output.
 
 This is cross-package compatibility evidence, not a third-party production-adoption
-claim. See the complete [consumer evidence](CONSUMER_EVIDENCE.md).
+claim. A separate candidate-wheel substitution check also passes against current
+Orchestration without changing the consumer's older declared pin. See the complete
+[consumer evidence](CONSUMER_EVIDENCE.md). The public order example above requires none
+of these sibling packages or repository credentials.
 
 ## Contract boundaries
 
