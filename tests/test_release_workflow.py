@@ -49,3 +49,18 @@ def test_release_uses_oidc_without_persistent_registry_credentials() -> None:
     assert "password:" not in workflow
     assert "PYPI_API_TOKEN" not in workflow
     assert "--clobber" not in workflow
+
+
+def test_checkout_free_upload_has_explicit_repository_identity() -> None:
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    upload_job = workflow.split("  release-assets:\n", 1)[1].split("  publish:\n", 1)[0]
+
+    assert "GH_REPO: ${{ github.repository }}" in upload_job
+    assert 'gh release upload "$RELEASE_TAG"' in upload_job
+
+
+def test_ci_and_release_test_artifacts_before_upload() -> None:
+    command = "python scripts/verify_distributions.py dist"
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert command in (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    assert release.index(command) < release.index("name: Attest package provenance")

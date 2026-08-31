@@ -1,6 +1,6 @@
 # Productization record
 
-Last updated: 2026-08-10
+Last updated: 2026-08-31
 
 ## Repository assessment
 
@@ -312,6 +312,31 @@ release provenance, or third-party adoption gates.
   compatibility window and should be removed only in a versioned breaking release.
 
 ## Final verification
+
+### Distribution-path audit (2026-08-31)
+
+The prior green checkout did not prove the distribution path. An exact `95f2d30` source
+archive reproduced a failing `test_repository_has_structured_contribution_intake` because
+the manifest omitted CODEOWNERS and issue/PR templates. The checkout-free release asset
+job also lacked `GH_REPO`; GitHub CLI repository discovery failed in an empty directory.
+These are release-engineering defects, not external-account blockers.
+
+The manifest now includes the contribution files, scripts, and tests. Both CI and release
+run `python scripts/verify_distributions.py dist`: exact artifact inventory, complete source
+payload, strict wheel boundary, fresh venv installation, installed-import provenance, and
+the shipped test suite outside the checkout. Release upload explicitly binds `GH_REPO`.
+The verifier never publishes and is for locally built artifacts only; its development-tool
+installation requires package-index access. Source and runtime APIs are unchanged.
+
+The local checkout suite passed 191 tests with 88.99% branch-aware coverage on Python 3.11.9;
+the same 191 tests passed against the installed wheel with 88.90% coverage (also counting
+the module entry point). Both module CLI version commands passed. Ruff, strict MyPy (22
+shipped source files plus a separate strict check of the verifier), Bandit, build, Twine,
+and Actionlint 1.7.12 passed. Remote CI evidence is recorded with the pull request and
+Actions runs. GitHub CLI repository selection was verified read-only outside a checkout;
+actual release upload, attestation, and PyPI publication remain unexecuted.
+
+### Earlier milestone evidence
 
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified

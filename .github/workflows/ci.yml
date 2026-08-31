@@ -16,6 +16,7 @@ jobs:
   quality:
     name: Quality (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +55,9 @@ jobs:
         run: |
           python -m build
           python -m twine check dist/*
+
+      - name: Test distributed source against the installed wheel
+        run: python scripts/verify_distributions.py dist
 
       - name: Verify wheel boundary
         run: python -c "import pathlib,zipfile; p=next(pathlib.Path('dist').glob('*.whl')); n=zipfile.ZipFile(p).namelist(); assert 'samsarix_orchestration/checkpoints.py' in n; assert 'samsarix_orchestration/events.py' in n; assert 'samsarix_orchestration/planning.py' in n; assert 'samsarix_orchestration/runtime.py' in n; assert 'samsarix_orchestration/sqlite_store.py' in n; assert 'samsarix_orchestration/subprocess_actions.py' in n; assert 'helix_orchestration/checkpoints.py' in n; assert 'helix_orchestration/events.py' in n; assert 'helix_orchestration/planning.py' in n; assert 'helix_orchestration/sqlite_store.py' in n; assert 'helix_orchestration/subprocess_actions.py' in n; assert not any('/agents/' in x or '/coordination/' in x or '/plugins/' in x for x in n)"

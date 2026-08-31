@@ -9,21 +9,29 @@ workflow library, compatibility namespace, CLI, tests, and documentation.
 git clone https://github.com/Deathcharge/samsarix-agent-orchestration.git
 cd samsarix-agent-orchestration
 python -m venv .venv
-python -m pip install -e ".[dev]"
 ```
 
-Activate the virtual environment using the command appropriate for your shell, then run:
+Activate `.venv` before installing: `source .venv/bin/activate` on POSIX shells or
+`.\.venv\Scripts\Activate.ps1` in PowerShell. Then install and verify:
 
 ```bash
+python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m mypy
 python -m pytest
 python -m bandit -q -r src
 python -m build
 python -m twine check dist/*
+python scripts/verify_distributions.py dist
 ```
 
-All six commands must pass. Tests enforce at least 85% branch-aware coverage. Add
+All verification commands must pass. The distribution verifier checks the complete source
+payload, installs the wheel in a fresh temporary environment, and runs the shipped tests
+outside the checkout. It needs package-index access to install development tools; it never
+publishes anything. Pass a directory containing only the current wheel and source archive
+(use `python -m build --outdir <fresh-directory>` when old artifacts exist).
+
+Tests enforce at least 85% branch-aware coverage. Add
 source-backed tests for success, validation, failure, timeout, retry, blocked, or
 cancellation behavior that changes.
 

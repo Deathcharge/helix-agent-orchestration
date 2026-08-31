@@ -68,6 +68,9 @@ jobs:
           python -m build --no-isolation
           python -m twine check dist/*
 
+      - name: Test distributed source against the installed wheel
+        run: python scripts/verify_distributions.py dist
+
       - name: Verify wheel contents
         run: |
           python - <<'PY'
@@ -130,6 +133,7 @@ jobs:
       - name: Attach distributions and checksums to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$RELEASE_TAG" dist/* release-assets/SHA256SUMS
 
