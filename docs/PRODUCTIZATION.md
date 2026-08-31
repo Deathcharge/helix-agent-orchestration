@@ -362,16 +362,12 @@ authoritative for Python 3.11 through 3.13:
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 
-Artifact inventory for the verified build:
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `samsarix_orchestration-0.1.0-py3-none-any.whl` | built | recorded in the external release attestation¹ |
-| `samsarix_orchestration-0.1.0.tar.gz` | built | record in the external release attestation¹ |
-
-¹ Reproducible verification records the final wheel and source-archive checksums outside
-the source tree. Embedding either checksum here would make this document stale whenever
-the artifact is rebuilt, and the document itself is included in the source archive.
+The verified artifact types are `samsarix_orchestration-0.1.0-py3-none-any.whl` and
+`samsarix_orchestration-0.1.0.tar.gz`. No public release attestation exists yet. Record
+checksums for the exact published bytes in the release assets and verification record,
+not in this source document: it is itself included in the source archive, and a rebuild
+can produce different bytes. Local build/test success does not prove signed provenance
+or publication.
 
 ## Release disposition
 
