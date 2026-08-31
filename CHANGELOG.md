@@ -45,6 +45,10 @@ versioned release pull request.
 
 ### Changed
 
+- Made the standalone order recovery example publish complete receipts without replacement
+  and reject conflicting existing content, with race/failure/CLI regression tests.
+- Clarified private consumer evidence and verified the current consumer against a candidate
+  wheel without changing its declared dependency pin.
 - Made first-use SQLite WAL initialization retry transient lock contention so concurrent
   store instances can safely create and use the same new checkpoint database.
 - Hardened Saga restoration by reapplying output-size bounds to compensations and by

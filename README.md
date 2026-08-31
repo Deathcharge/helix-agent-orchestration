@@ -348,9 +348,12 @@ This is an at-least-once contract, not an exactly-once claim. A process can stop
 external effect succeeds but before its checkpoint is written, so effectful handlers must
 pass the idempotency key to the target system or otherwise deduplicate it. The runnable
 [resumable order example](examples/resumable_order_pipeline.py) demonstrates that crash
-window without duplicating a receipt. See [real use cases](docs/USE_CASES.md) for fit and
-non-fit guidance and [external consumer evidence](docs/CONSUMER_EVIDENCE.md) for the
-independently installed redaction pipeline.
+window without duplicating a receipt. It publishes complete files without replacement
+and rejects conflicting existing content. See [real use cases](docs/USE_CASES.md) for
+copy-paste recovery commands, filesystem requirements, and fit/non-fit guidance.
+[Internal consumer evidence](docs/CONSUMER_EVIDENCE.md) records a separately installed
+redaction pipeline; that consumer repository requires owner-granted access and is not
+needed to use this package.
 
 For multiple runs in one trusted host, use the standard-library SQLite store:
 
