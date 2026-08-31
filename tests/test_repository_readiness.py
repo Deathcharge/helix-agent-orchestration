@@ -6,6 +6,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -33,3 +35,13 @@ def test_repository_has_structured_contribution_intake() -> None:
     assert "blank_issues_enabled: false" in config
     assert "/security/policy" in config
     assert "@Deathcharge" in (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("document", ["README.md", "CONTRIBUTING.md"])
+def test_setup_selects_the_virtual_environment_before_installing(document: str) -> None:
+    """Creating a venv alone must not be presented as changing the active interpreter."""
+    instructions = (ROOT / document).read_text(encoding="utf-8")
+    create = instructions.index("python -m venv .venv")
+    install = instructions.index("python -m pip install")
+    assert create < instructions.index("source .venv/bin/activate") < install
+    assert create < instructions.index(".\\.venv\\Scripts\\Activate.ps1") < install

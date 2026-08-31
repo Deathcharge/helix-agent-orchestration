@@ -163,6 +163,8 @@ Current ecosystem evidence informed the limits rather than expanding scope:
 - [x] Make validation, execution, tests, lint, strict typing, and builds runnable.
 - [x] Remove deployment claims and configs for the nonexistent server.
 - [x] Ensure the supported distribution has no private Helix runtime dependency.
+- [x] Select the created virtual environment before installing in the README quickstart;
+  verify a fresh source installation and the full first-run CLI journey in CI.
 
 ### P1
 
@@ -322,6 +324,37 @@ release provenance, consumer adoption of the candidate, or third-party adoption 
   compatibility window and should be removed only in a versioned breaking release.
 
 ## Final verification
+
+### Isolated onboarding and executable examples (2026-08-31)
+
+The README at `c9153c6` created `.venv` but immediately invoked the caller's existing
+`python` and CLI without selecting that environment. This was a locally actionable setup
+defect, not a PyPI blocker. README and contributor setup now have regression checks that
+require both POSIX and PowerShell activation guidance before installation. The README also
+documents explicit `.venv` interpreter invocation when PowerShell activation is unavailable,
+without recommending execution-policy changes.
+
+A fresh Python 3.11.9 environment successfully ran the PowerShell activation, source
+installation, `init`, `validate`, `plan`, and `run --output run.json` sequence. Both the
+import and console executable resolved inside that environment, the workflow succeeded,
+and stdout matched the saved report. Every CI matrix job now creates a separate fresh
+environment, installs from source, checks interpreter/import/CLI provenance outside the
+checkout, and executes the same complete journey.
+
+Five new subprocess smoke cases execute the remaining bundled examples with isolated
+Python and a temporary working directory: ordinary Python actions, retry lifecycle events,
+three SQLite runs, successful Saga compensation, and the two-process JSON pipeline. Together
+with the existing order-recovery tests, all six bundled examples now have executable checks
+in the suite and therefore in the archive-only installed-wheel gate. The Saga report keeps
+definition order; its smoke check validates successful compensation outputs, while the
+runtime tests separately verify execution ordering.
+
+`python -m pytest` passed 211 tests with 88.96% branch-aware runtime coverage locally.
+Ruff, strict MyPy, Bandit, formatting checks for changed Python tests, and Actionlint 1.7.12
+passed. Runtime APIs and dependencies are unchanged. The new CI step adds bounded build-tool
+index access and temporary local installation, not a service, account, or production effect.
+The source archive and wheel passed build/Twine checks; the archive-only round-trip passed
+the same 211 tests with 88.90% coverage against the installed wheel outside the checkout.
 
 ### Public recovery example and current consumer (2026-08-31)
 

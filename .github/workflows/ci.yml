@@ -56,6 +56,38 @@ jobs:
           python -m build
           python -m twine check dist/*
 
+      - name: Verify documented quickstart in a fresh environment
+        run: |
+          quickstart_dir="$(mktemp -d)"
+          python -m venv "$quickstart_dir/.venv"
+          source "$quickstart_dir/.venv/bin/activate"
+          python -m pip install .
+          cd "$quickstart_dir"
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          import sys
+          import samsarix_orchestration
+
+          prefix = Path(sys.prefix).resolve()
+          assert prefix == Path(".venv").resolve()
+          assert Path(samsarix_orchestration.__file__).resolve().is_relative_to(prefix)
+          command = shutil.which("samsarix-orchestration")
+          assert command is not None and Path(command).resolve().is_relative_to(prefix)
+          PY
+          samsarix-orchestration init workflow.json
+          samsarix-orchestration validate workflow.json
+          samsarix-orchestration plan workflow.json
+          samsarix-orchestration run workflow.json --output run.json > stdout.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("run.json").read_text())
+          assert report["status"] == "succeeded"
+          assert report == json.loads(Path("stdout.json").read_text())
+          PY
+
       - name: Test distributed source against the installed wheel
         run: python scripts/verify_distributions.py dist
 

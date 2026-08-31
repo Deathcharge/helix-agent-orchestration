@@ -54,6 +54,13 @@ Prerequisites: Git and Python 3.11 or newer.
 git clone https://github.com/Deathcharge/samsarix-agent-orchestration.git
 cd samsarix-agent-orchestration
 python -m venv .venv
+```
+
+Activate the environment **before installing**: `source .venv/bin/activate` on macOS/Linux
+or `.\.venv\Scripts\Activate.ps1` in PowerShell. Creating `.venv` alone does not select its
+Python interpreter. With that environment active, continue:
+
+```bash
 python -m pip install .
 samsarix-orchestration init workflow.json
 samsarix-orchestration validate workflow.json
@@ -66,6 +73,9 @@ The final command exits with `0` and prints a JSON report whose workflow status 
 report files are never replaced unless `--force` or `--force-output` is explicit.
 
 You can use `python -m samsarix_orchestration` instead of the installed command.
+If PowerShell policy prevents activation, there is no need to change that policy: use
+`.\.venv\Scripts\python.exe -m pip install .`, then invoke
+`.\.venv\Scripts\python.exe -m samsarix_orchestration` with the same command arguments.
 
 ## CLI
 
@@ -377,6 +387,9 @@ independent runs. SQLite's upstream documentation describes the
 
 ## Development
 
+Start with the activated environment from the setup above (or follow
+[the contribution setup](CONTRIBUTING.md#setup)) before installing development tools.
+
 ```bash
 python -m pip install -e ".[dev]"
 python -m ruff check .
@@ -395,7 +408,8 @@ has no runtime dependencies, while bounded development ranges live in `pyproject
 ## Distribution
 
 The supported artifact is the `samsarix_orchestration` package built from the
-`src` layout and the `samsarix-orchestration` console script:
+`src` layout and the `samsarix-orchestration` console script. With the same environment
+active and development tools installed:
 
 ```bash
 python -m build
