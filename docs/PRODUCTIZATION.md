@@ -1,6 +1,6 @@
 # Productization record
 
-Last updated: 2026-08-10
+Last updated: 2026-08-31
 
 ## Repository assessment
 
@@ -313,6 +313,36 @@ release provenance, or third-party adoption gates.
 
 ## Final verification
 
+### Distribution-path audit (2026-08-31)
+
+The prior green checkout did not prove the distribution path. An exact `95f2d30` source
+archive reproduced a failing `test_repository_has_structured_contribution_intake` because
+the manifest omitted CODEOWNERS and issue/PR templates. The checkout-free release asset
+job also lacked `GH_REPO`; GitHub CLI repository discovery failed in an empty directory.
+These are release-engineering defects, not external-account blockers.
+
+The manifest now includes the contribution files, scripts, and tests. Both CI and release
+run `python scripts/verify_distributions.py dist`: exact artifact inventory, complete source
+payload, strict wheel boundary, fresh venv installation, installed-import provenance, and
+the shipped test suite outside the checkout. Release upload explicitly binds `GH_REPO`.
+Release verification runs on a separate read-only runner after build attestation and before
+asset attachment; ranged test dependencies have no signing or publication credentials.
+The attachment and publication jobs download the original build artifact by immutable ID,
+never by reusable name or from the test runner. This isolates the test dependency trust
+boundary; it does not eliminate supply-chain risk in build tools or third-party actions.
+The verifier never publishes and is for locally built artifacts only; its development-tool
+installation requires package-index access. Source and runtime APIs are unchanged.
+
+The local checkout suite passed 192 tests with 88.96% branch-aware coverage on Python 3.11.9;
+the same 192 tests passed against the installed wheel with 88.93% coverage (also counting
+the module entry point). Both module CLI version commands passed. Ruff, strict MyPy (22
+shipped source files plus a separate strict check of the verifier), Bandit, build, Twine,
+and Actionlint 1.7.12 passed. Remote CI evidence is recorded with the pull request and
+Actions runs. GitHub CLI repository selection was verified read-only outside a checkout;
+actual release upload, attestation, and PyPI publication remain unexecuted.
+
+### Earlier milestone evidence
+
 The release-candidate foundation was verified from a fresh Python 3.11 virtual
 environment. The durable-checkpoint and lifecycle-event milestones were then verified
 locally on Python 3.14. The SQLite, approval-gate, offline-planning, and compensation milestones were
@@ -337,16 +367,12 @@ authoritative for Python 3.11 through 3.13:
   compatibility entries, three legal files, no historical subpackages, and zero
   unconditional runtime dependencies.
 
-Artifact inventory for the verified build:
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `samsarix_orchestration-0.1.0-py3-none-any.whl` | built | recorded in the external release attestation¹ |
-| `samsarix_orchestration-0.1.0.tar.gz` | built | record in the external release attestation¹ |
-
-¹ Reproducible verification records the final wheel and source-archive checksums outside
-the source tree. Embedding either checksum here would make this document stale whenever
-the artifact is rebuilt, and the document itself is included in the source archive.
+The verified artifact types are `samsarix_orchestration-0.1.0-py3-none-any.whl` and
+`samsarix_orchestration-0.1.0.tar.gz`. No public release attestation exists yet. Record
+checksums for the exact published bytes in the release assets and verification record,
+not in this source document: it is itself included in the source archive, and a rebuild
+can produce different bytes. Local build/test success does not prove signed provenance
+or publication.
 
 ## Release disposition
 

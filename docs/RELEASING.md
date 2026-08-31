@@ -34,13 +34,22 @@ repository, workflow filename, and environment identity together.
 2. Choose the version and update `project.version`, `CHANGELOG.md`, and any status text in
    the same pull request. Versions are immutable after publication.
 3. Run Ruff, strict MyPy, Bandit, the full branch-aware test suite, `python -m build`, and
-   `python -m twine check dist/*` in a clean supported Python environment.
+   `python -m twine check dist/*` in a clean supported Python environment. Run
+   `python scripts/verify_distributions.py dist` to check the complete archive payload and
+   execute the shipped tests against an installed wheel in a fresh temporary environment
+   outside the checkout. Use a fresh output directory if stale artifacts exist. This gate
+   also runs in CI and in a separate read-only release verification job; installing test
+   tools requires index access, but the runtime itself remains dependency-free.
 4. Merge the green release pull request. Create a draft GitHub release targeting `main`
    with tag `v<project.version>` and release notes derived from the changelog.
 5. Publish the GitHub release. The workflow checks out the immutable tag, rejects a
    tag/version mismatch, rebuilds and validates the wheel and source archive, verifies the
    wheel boundary, generates SHA-256 checksums and a Sigstore/GitHub provenance attestation,
-   and attaches those immutable files to the GitHub release. Only then does publication wait
+   and preserves the attested build artifact. A separate read-only runner tests downloaded
+   copies, without signing or upload privileges. After verification succeeds, the asset job
+   downloads the original build artifact again and attaches it to the GitHub release; it
+   never consumes files from the test runner. All downstream downloads use the build's
+   immutable artifact ID, not its reusable name. Only then does publication wait
    for approval on the `pypi` environment.
 6. Review the workflow run and approve the deployment only when the tag, commit, changelog,
    artifact names, and checksums are expected. The final job publishes the already-attached
@@ -49,6 +58,11 @@ repository, workflow filename, and environment identity together.
 The release trigger deliberately has no `workflow_dispatch` or ordinary tag-push path.
 Publishing the GitHub release is the explicit release action, and the protected environment
 is the final registry gate.
+
+The asset-upload job deliberately has no source checkout. It selects the target repository
+through `GH_REPO: ${{ github.repository }}`; GitHub CLI cannot otherwise discover a repository
+in an artifact-only workspace. Do not remove this binding or add checkout credentials to
+work around repository-discovery errors.
 
 ## Verify publication
 

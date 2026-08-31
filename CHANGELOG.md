@@ -9,6 +9,8 @@ versioned release pull request.
 
 ### Added
 
+- Archive-only release verification that checks the full source payload and executes its
+  shipped tests against a wheel installed outside the checkout in an empty environment.
 - Opt-in checkpoint stores, exact workflow/input identity validation, and resumable runs.
 - Transactional same-host SQLite checkpoints with bounded WAL concurrency, monotonic
   same-run updates, privacy-safe run inspection, and confirmation-gated deletion.
