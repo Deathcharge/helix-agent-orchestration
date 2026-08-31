@@ -45,6 +45,10 @@ versioned release pull request.
 
 ### Changed
 
+- Corrected quickstart environment selection and added isolated source-install/CLI journey
+  verification to every supported Python CI job.
+- Added executable smoke checks for every bundled example to the checkout and installed-wheel
+  test suite.
 - Made the standalone order recovery example publish complete receipts without replacement
   and reject conflicting existing content, with race/failure/CLI regression tests.
 - Clarified private consumer evidence and verified the current consumer against a candidate
