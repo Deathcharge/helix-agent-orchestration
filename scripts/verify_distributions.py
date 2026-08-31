@@ -124,10 +124,12 @@ def verify_archives(dist: Path, source: Path) -> tuple[Path, Path, str]:
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
+    """Run a verification command with failure propagation and a finite timeout."""
     subprocess.run(command, cwd=cwd, env=env, check=True, timeout=600)
 
 
 def main() -> int:
+    """Test the versioned local artifacts in a disposable, non-editable environment."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dist", type=Path, help="directory containing only locally built artifacts")
     args = parser.parse_args()

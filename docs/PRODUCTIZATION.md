@@ -325,11 +325,16 @@ The manifest now includes the contribution files, scripts, and tests. Both CI an
 run `python scripts/verify_distributions.py dist`: exact artifact inventory, complete source
 payload, strict wheel boundary, fresh venv installation, installed-import provenance, and
 the shipped test suite outside the checkout. Release upload explicitly binds `GH_REPO`.
+Release verification runs on a separate read-only runner after build attestation and before
+asset attachment; ranged test dependencies have no signing or publication credentials.
+The attachment and publication jobs download the original build artifact by immutable ID,
+never by reusable name or from the test runner. This isolates the test dependency trust
+boundary; it does not eliminate supply-chain risk in build tools or third-party actions.
 The verifier never publishes and is for locally built artifacts only; its development-tool
 installation requires package-index access. Source and runtime APIs are unchanged.
 
-The local checkout suite passed 191 tests with 88.99% branch-aware coverage on Python 3.11.9;
-the same 191 tests passed against the installed wheel with 88.90% coverage (also counting
+The local checkout suite passed 192 tests with 88.96% branch-aware coverage on Python 3.11.9;
+the same 192 tests passed against the installed wheel with 88.93% coverage (also counting
 the module entry point). Both module CLI version commands passed. Ruff, strict MyPy (22
 shipped source files plus a separate strict check of the verifier), Bandit, build, Twine,
 and Actionlint 1.7.12 passed. Remote CI evidence is recorded with the pull request and

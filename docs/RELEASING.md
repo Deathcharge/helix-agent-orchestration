@@ -38,14 +38,18 @@ repository, workflow filename, and environment identity together.
    `python scripts/verify_distributions.py dist` to check the complete archive payload and
    execute the shipped tests against an installed wheel in a fresh temporary environment
    outside the checkout. Use a fresh output directory if stale artifacts exist. This gate
-   also runs in CI and before release attestation; installing test tools requires index
-   access, but the runtime itself remains dependency-free.
+   also runs in CI and in a separate read-only release verification job; installing test
+   tools requires index access, but the runtime itself remains dependency-free.
 4. Merge the green release pull request. Create a draft GitHub release targeting `main`
    with tag `v<project.version>` and release notes derived from the changelog.
 5. Publish the GitHub release. The workflow checks out the immutable tag, rejects a
    tag/version mismatch, rebuilds and validates the wheel and source archive, verifies the
    wheel boundary, generates SHA-256 checksums and a Sigstore/GitHub provenance attestation,
-   and attaches those immutable files to the GitHub release. Only then does publication wait
+   and preserves the attested build artifact. A separate read-only runner tests downloaded
+   copies, without signing or upload privileges. After verification succeeds, the asset job
+   downloads the original build artifact again and attaches it to the GitHub release; it
+   never consumes files from the test runner. All downstream downloads use the build's
+   immutable artifact ID, not its reusable name. Only then does publication wait
    for approval on the `pypi` environment.
 6. Review the workflow run and approve the deployment only when the tag, commit, changelog,
    artifact names, and checksums are expected. The final job publishes the already-attached

@@ -59,8 +59,34 @@ def test_checkout_free_upload_has_explicit_repository_identity() -> None:
     assert 'gh release upload "$RELEASE_TAG"' in upload_job
 
 
-def test_ci_and_release_test_artifacts_before_upload() -> None:
+def test_release_tests_run_without_signing_or_upload_permissions() -> None:
+    """Verification dependencies must not share a runner with release write credentials."""
     command = "python scripts/verify_distributions.py dist"
     release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     assert command in (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
-    assert release.index(command) < release.index("name: Attest package provenance")
+    build, downstream = release.split("  verify:\n", 1)
+    verify, downstream = downstream.split("  release-assets:\n", 1)
+    assets = downstream.split("  publish:\n", 1)[0]
+    assert command not in build
+    assert command in verify
+    assert "needs: build" in verify
+    assert "contents: read" in verify
+    assert ": write" not in verify
+    assert "persist-credentials: false" in verify
+    assert "needs: [build, verify]" in assets
+    assert "actions/download-artifact@" in assets
+
+
+def test_release_consumers_download_only_the_immutable_build_artifact() -> None:
+    """A later job cannot substitute a different upload with the same artifact name."""
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    build, downstream = release.split("  verify:\n", 1)
+    assert "artifact-id: ${{ steps.payload.outputs.artifact-id }}" in build
+    assert "id: payload\n        uses: actions/upload-artifact@" in build
+    assert "name: python-distributions" in build
+    assert "name: python-distributions" not in downstream
+    for job in ("verify", "release-assets", "publish"):
+        # Job headers are indented two spaces; body lines at least four.
+        body = re.split(r"\n  [a-z][a-z-]*:\n", release.split(f"  {job}:\n", 1)[1])[0]
+        assert "artifact-ids: ${{ needs.build.outputs.artifact-id }}" in body
+        assert "merge-multiple: true" in body
